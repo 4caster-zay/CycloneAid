@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('Agg')
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import pandas as pd
@@ -9,23 +11,25 @@ from datetime import datetime, timezone, timedelta
 import time as _time
 from PIL import Image, ImageTk
 from tkinter import BooleanVar
+import threading
 
 APP_NAME = "CycloneAid"
-VERSION = "Alpha 0.8.0"
+VERSION = "Alpha 0.8.1"
 CREATOR = "Forecaster Zayed"
 
 # Import plot_storm_track and plot_storm_prognostic from the respective scripts
-spec_tracker = importlib.util.spec_from_file_location("storm_tracker", os.path.join(os.getcwd(), "storm_tracker.py"))
+importlib_base_dir = os.path.dirname(os.path.abspath(__file__))
+spec_tracker = importlib.util.spec_from_file_location("storm_tracker", os.path.join(importlib_base_dir, "storm_tracker.py"))
 storm_tracker = importlib.util.module_from_spec(spec_tracker)
 sys.modules["storm_tracker"] = storm_tracker
 spec_tracker.loader.exec_module(storm_tracker)
 
-spec_prognostic = importlib.util.spec_from_file_location("storm_prognostic", os.path.join(os.getcwd(), "storm_prognostic.py"))
+spec_prognostic = importlib.util.spec_from_file_location("storm_prognostic", os.path.join(importlib_base_dir, "storm_prognostic.py"))
 storm_prognostic = importlib.util.module_from_spec(spec_prognostic)
 sys.modules["storm_prognostic"] = storm_prognostic
 spec_prognostic.loader.exec_module(storm_prognostic)
 
-spec_ri = importlib.util.spec_from_file_location("storm_RI_plot", os.path.join(os.getcwd(), "storm_RI_plot.py"))
+spec_ri = importlib.util.spec_from_file_location("storm_RI_plot", os.path.join(importlib_base_dir, "storm_RI_plot.py"))
 storm_ri_plot = importlib.util.module_from_spec(spec_ri)
 sys.modules["storm_RI_plot"] = storm_ri_plot
 spec_ri.loader.exec_module(storm_ri_plot)
@@ -573,11 +577,10 @@ class DataEntryScreen(tk.Frame):
     def create_widgets(self):
         # Top bar with icon and heading
         topbar = tk.Frame(self, bg=DARK_BG)
-        tk.Button(topbar, text="← Home", command=self.on_back, bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=8, pady=8)
+        tk.Button(topbar, text="← Home", command=self.on_back_guarded, bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=8, pady=8)
         tk.Label(topbar, text="🌀 Storm Data Entry", font=("Segoe UI", 18, "bold"), fg=PRIMARY_COLOR, bg=DARK_BG).pack(side=tk.LEFT, padx=12)
         # Storm Name entry
         tk.Label(topbar, text="Storm Name:", font=("Segoe UI", 11, "bold"), fg=WHITE, bg=DARK_BG).pack(side=tk.LEFT, padx=(30,2))
-        self.storm_name_var = tk.StringVar(value="CycloneAid")
         storm_name_entry = tk.Entry(topbar, textvariable=self.storm_name_var, font=("Segoe UI", 11), width=16, justify="center")
         storm_name_entry.pack(side=tk.LEFT, padx=2)
         tk.Label(topbar, text="Forecaster Confidence:", font=("Segoe UI", 11), fg=WHITE, bg=DARK_BG).pack(side=tk.LEFT, padx=(30,2))
@@ -591,24 +594,32 @@ class DataEntryScreen(tk.Frame):
         topbar.pack(fill=tk.X, pady=(0, 10))
 
         # Table
-        table_frame = tk.Frame(self, bg=DARK_BG)
-        table_frame.pack(pady=10, fill=tk.BOTH, expand=True)
+        self.table_frame = tk.Frame(self, bg=DARK_BG)
+        self.table_frame.pack(pady=10, fill=tk.BOTH, expand=True)
         columns = [c[0] for c in self.COLUMNS]
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=8)
+        self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=8)
         for i, (col, w) in enumerate(self.COLUMNS):
             self.tree.heading(col, text=col)
             self.tree.column(col, width=w*10, anchor="center")
-        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
-        hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+        vsb = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(self.table_frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscroll=vsb.set, xscroll=hsb.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
-        table_frame.grid_rowconfigure(0, weight=1)
-        table_frame.grid_columnconfigure(0, weight=1)
+        self.table_frame.grid_rowconfigure(0, weight=1)
+        self.table_frame.grid_columnconfigure(0, weight=1)
         self.tree.bind('<Double-1>', self.on_double_click)
         # Right-click context menu for rows
         self.tree.bind('<Button-3>', self.show_row_context_menu)
+        
+        self.tree.tag_configure('invalid', background='#4a1a1a', foreground='#ff8080')
+        self.tree.tag_configure('warning', background='#3a3a00', foreground=ACCENT)
+        self.tree.tag_configure('normal', background=DARK_BG, foreground=WHITE)
+        
+        # Keyboard shortcuts
+        self.bind_all("<Delete>", self._on_delete_key)
+        self.bind_all("<Control-s>", lambda e: self.export_csv())
 
         # ─── Row Management Toolbar ───
         btn_frame = tk.Frame(self, bg=DARK_BG)
@@ -727,13 +738,17 @@ class DataEntryScreen(tk.Frame):
         status_right = tk.Frame(clock_bar, bg="#1a1e25")
         status_right.pack(side=tk.RIGHT, padx=12, pady=6)
         self.row_count_label = tk.Label(status_right, text="Rows: 0", font=("Segoe UI", 10, "bold"), fg=WHITE, bg="#1a1e25")
-        self.row_count_label.pack(side=tk.RIGHT)
+        self.row_count_label.pack(side=tk.RIGHT, padx=(10, 0))
+        self.status_label = tk.Label(status_right, text="Ready", font=("Segoe UI", 10), fg="#aaaaaa", bg="#1a1e25")
+        self.status_label.pack(side=tk.RIGHT)
 
         # Start the clock tick
         self._tick_clock()
 
     def _tick_clock(self):
         """Update the clock labels every second."""
+        if not self.winfo_exists():
+            return
         now_utc = datetime.now(timezone.utc)
         self.zulu_time_label.config(text=now_utc.strftime("%H:%M:%SZ"))
         self.zulu_date_label.config(text=now_utc.strftime("%Y-%m-%d  UTC+0 (Zulu)"))
@@ -752,6 +767,31 @@ class DataEntryScreen(tk.Frame):
         self.row_count_label.config(text=f"Rows: {num_rows}")
 
         self.after(1000, self._tick_clock)
+
+    def on_back_guarded(self):
+        if len(self.tree.get_children()) > 0:
+            if not messagebox.askyesno("Unsaved Data", "Going home will clear your current data. Continue?"):
+                return
+        self.on_back()
+
+    def _on_delete_key(self, event):
+        # Only delete row if treeview has focus
+        if self.focus_get() == self.tree:
+            self.remove_row()
+
+    def _set_buttons_loading(self, loading, message=""):
+        state = tk.DISABLED if loading else tk.NORMAL
+        for btn in [self.btn_preview_track, self.btn_save_track,
+                    self.btn_preview_prognostic, self.btn_save_prognostic,
+                    self.btn_preview_ri, self.btn_save_ri]:
+            btn.config(state=state)
+        
+        if loading:
+            self.status_label.config(text=message, fg=ACCENT)
+        else:
+            self.status_label.config(text="Ready", fg="#aaaaaa")
+            if not loading:
+                self.update_action_buttons()
 
     def add_row(self, values=None):
         # Default: time, lead, lat, lon, wind, landfall, storm_type, intensity, interpolated
@@ -859,15 +899,7 @@ class DataEntryScreen(tk.Frame):
         col_name = self.COLUMNS[col_idx][0]
         old_value = self.tree.set(item, col_name)
         
-        # Find the table_frame parent to position editor correctly
-        table_frame = None
-        for widget in self.winfo_children():
-            if isinstance(widget, tk.Frame) and widget.winfo_children():
-                if self.tree in widget.winfo_children():
-                    table_frame = widget
-                    break
-        
-        parent_widget = table_frame if table_frame else self
+        parent_widget = self.table_frame if hasattr(self, "table_frame") else self
         
         # Create appropriate editor based on column type
         self.cell_editor = CellEditor(
@@ -882,16 +914,24 @@ class DataEntryScreen(tk.Frame):
         
         if col_name == "Intensity":
             values[col_idx] = new_value
+            if not hasattr(self, 'intensity_overrides'):
+                self.intensity_overrides = set()
+            self.intensity_overrides.add(item)
             self.tree.item(item, values=values)
         elif col_name == "Storm Type":
             values[col_idx] = new_value
             self.tree.item(item, values=values)
         elif col_name == "Wind (kt)":
             values[col_idx] = new_value
-            # Auto-update intensity if storm type is Tropical
-            wind = int(new_value) if new_value else 0
+            try:
+                wind = int(float(new_value)) if new_value else 0
+            except ValueError:
+                wind = 0
+                
             storm_type = values[6] if len(values) > 6 else "Tropical"
-            if storm_type == "Tropical":
+            overrides = getattr(self, 'intensity_overrides', set())
+            
+            if storm_type == "Tropical" and item not in overrides:
                 # Auto-derive intensity from wind
                 intensity = self.auto_intensity(wind)
                 try:
@@ -944,20 +984,32 @@ class DataEntryScreen(tk.Frame):
 
     def is_table_valid(self):
         # Check all required fields in all rows
+        is_valid = True
         for item in self.tree.get_children():
             values = self.tree.item(item, 'values')
+            row_ok = True
             try:
                 time_str = values[0]
+                pd.to_datetime(time_str)
                 lead = int(values[1])
                 lat_str = values[2]
                 lon_str = values[3]
-                wind_str = values[4]
+                lat, lon = float(lat_str), float(lon_str)
+                wind = int(values[4])
                 intensity = values[7].strip() if len(values) > 7 else ""
-                if not intensity:
-                    return False
+                
+                if not (-90 <= lat <= 90) or not (-180 <= lon <= 360) or wind < 0 or not intensity:
+                    row_ok = False
             except Exception:
-                return False
-        return True
+                row_ok = False
+                
+            if row_ok:
+                self.tree.item(item, tags=('normal',))
+            else:
+                self.tree.item(item, tags=('invalid',))
+                is_valid = False
+                
+        return is_valid
 
     def auto_intensity(self, wind):
         """Derive intensity class from wind speed."""
@@ -973,40 +1025,71 @@ class DataEntryScreen(tk.Frame):
         try:
             df = pd.read_csv(path, comment="#")
             self.tree.delete(*self.tree.get_children())
+            if not hasattr(self, 'intensity_overrides'):
+                self.intensity_overrides = set()
+            else:
+                self.intensity_overrides.clear()
+                
             for _, row in df.iterrows():
+                wind_val = row.get('wind_kt', '')
+                try:
+                    wind = int(float(wind_val)) if not pd.isna(wind_val) and str(wind_val).strip() else 0
+                except (ValueError, TypeError):
+                    wind = 0
+                    
+                is_overridden = False
+                
                 # Handle new format (intensity_class, storm_type) or legacy (category)
                 if 'intensity_class' in df.columns and 'storm_type' in df.columns:
-                    intensity = row.get('intensity_class', 'TD')
-                    storm_type = row.get('storm_type', 'Tropical')
-                    is_interpolated = row.get('is_interpolated', False)
+                    intensity = row.get('intensity_class')
+                    if pd.isna(intensity) or not str(intensity).strip():
+                        intensity = self.auto_intensity(wind)
+                    else:
+                        intensity = str(intensity).strip()
+                        is_overridden = True
+                        
+                    storm_type = row.get('storm_type')
+                    if pd.isna(storm_type) or not str(storm_type).strip():
+                        storm_type = 'Tropical'
+                    else:
+                        storm_type = str(storm_type).strip()
                 else:
                     # Legacy format - parse category
-                    category = row.get('category', 'TD')
-                    if category == 'L':
-                        intensity = 'TD'
-                        storm_type = 'Low'
-                    elif category == 'EX':
-                        intensity = self.auto_intensity(row.get('wind_kt', 0))
-                        storm_type = 'Extratropical'
-                    elif category in ['SD', 'SS']:
-                        intensity = 'TS' if category == 'SS' else 'TD'
-                        storm_type = 'Subtropical'
-                    else:
-                        intensity = category
+                    cat_val = row.get('category')
+                    if pd.isna(cat_val) or not str(cat_val).strip():
+                        intensity = self.auto_intensity(wind)
                         storm_type = 'Tropical'
-                    is_interpolated = row.get('is_interpolated', False)
-                
-                self.add_row([
-                    row.get('time', ''),
-                    "0",  # Lead time will be recalculated
-                    row.get('lat', ''),
-                    row.get('lon', ''),
-                    row.get('wind_kt', ''),
+                    else:
+                        category = str(cat_val).strip()
+                        if category == 'L':
+                            intensity = 'TD'
+                            storm_type = 'Low'
+                        elif category == 'EX':
+                            intensity = self.auto_intensity(wind)
+                            storm_type = 'Extratropical'
+                        elif category in ['SD', 'SS']:
+                            intensity = 'TS' if category == 'SS' else 'TD'
+                            storm_type = 'Subtropical'
+                        else:
+                            intensity = category
+                            storm_type = 'Tropical'
+                            is_overridden = True
+                            
+                is_interpolated = row.get('is_interpolated', False)
+                item = self.tree.insert("", "end", values=[
+                    str(row.get('time', '')),
+                    "0",
+                    str(row.get('lat', '')),
+                    str(row.get('lon', '')),
+                    str(wind_val) if not pd.isna(wind_val) else '',
                     str(row.get('landfall', False)),
                     storm_type,
                     intensity,
                     str(is_interpolated)
                 ])
+                if is_overridden:
+                    self.intensity_overrides.add(item)
+                    
             # Recalculate lead times
             children = self.tree.get_children()
             if children:
@@ -1055,6 +1138,10 @@ class DataEntryScreen(tk.Frame):
             # Use the same converter already used by the CLI
             df = storm_tracker.read_gpx_to_dataframe(path)
             self.tree.delete(*self.tree.get_children())
+            if not hasattr(self, 'intensity_overrides'):
+                self.intensity_overrides = set()
+            else:
+                self.intensity_overrides.clear()
 
             for _, row in df.iterrows():
                 # Format time for display
@@ -1063,17 +1150,39 @@ class DataEntryScreen(tk.Frame):
                 except Exception:
                     time_str = str(row.get('time', ''))
 
-                self.add_row([
+                wind_val = row.get('wind_kt', '')
+                try:
+                    wind = int(float(wind_val)) if not pd.isna(wind_val) and str(wind_val).strip() else 0
+                except (ValueError, TypeError):
+                    wind = 0
+                    
+                storm_type = row.get('storm_type')
+                if pd.isna(storm_type) or not str(storm_type).strip():
+                    storm_type = 'Tropical'
+                else:
+                    storm_type = str(storm_type).strip()
+
+                is_overridden = False
+                intensity = row.get('intensity_class')
+                if pd.isna(intensity) or not str(intensity).strip():
+                    intensity = self.auto_intensity(wind) if storm_type == 'Tropical' else 'TD'
+                else:
+                    intensity = str(intensity).strip()
+                    is_overridden = True
+
+                item = self.tree.insert("", "end", values=[
                     time_str,
                     "0",  # Lead time will be recalculated below
-                    row.get('lat', ''),
-                    row.get('lon', ''),
-                    row.get('wind_kt', ''),
+                    str(row.get('lat', '')),
+                    str(row.get('lon', '')),
+                    str(wind_val) if not pd.isna(wind_val) else '',
                     str(row.get('landfall', False)),
-                    row.get('storm_type', 'Low'),  # Default for GPX imports
-                    row.get('intensity_class', 'TD'),
+                    storm_type,
+                    intensity,
                     str(row.get('is_interpolated', False))
                 ])
+                if is_overridden:
+                    self.intensity_overrides.add(item)
 
             # Recalculate lead times just like in CSV import
             children = self.tree.get_children()
@@ -1120,36 +1229,50 @@ class DataEntryScreen(tk.Frame):
                     is_interpolated=p['is_interpolated']
                 ) for p in points
             ]
-            render_context = None
-            if get_preset is not None:
-                preset = get_preset(self.export_preset_var.get())
-                storm_data = {
-                    "forecast_points": pts,
-                    "issue_time": pts[0].time,
-                    "valid_until": pts[-1].time if pts else None,
-                    "has_interpolated": any(p.get("is_interpolated") for p in points),
-                    "forecaster_confidence": forecaster_confidence,
-                    "validation_result": validation_result,
-                    "validation_warning_count": len(validation_result.soft_warnings),
-                }
-                render_context = preset.build_render_context(storm_data)
-            fig = storm_tracker.plot_storm_track(pts, storm_name=storm_name,
-                                                 issue_time=pts[0].time,
-                                                 forecaster_confidence=forecaster_confidence,
-                                                 render_context=render_context)
-            self.last_fig = fig
-            self.last_pts = pts
-            self.last_storm_name = storm_name
-            self.last_forecaster_confidence = forecaster_confidence
-            self.last_render_context = render_context
             
-            # Show warnings if any
-            if validation_result.has_warnings():
-                self.show_validation_dialog(validation_result, is_warning=True)
+            self._set_buttons_loading(True, "Generating track plot… ⏳")
             
-            self.show_preview(fig, title=f"Track Preview - {storm_name}")
+            def _run():
+                try:
+                    render_context = None
+                    if get_preset is not None:
+                        preset = get_preset(self.export_preset_var.get())
+                        storm_data = {
+                            "forecast_points": pts,
+                            "issue_time": pts[0].time,
+                            "valid_until": pts[-1].time if pts else None,
+                            "has_interpolated": any(p.get("is_interpolated") for p in points),
+                            "forecaster_confidence": forecaster_confidence,
+                            "validation_result": validation_result,
+                            "validation_warning_count": len(validation_result.soft_warnings),
+                        }
+                        render_context = preset.build_render_context(storm_data)
+                    fig = storm_tracker.plot_storm_track(pts, storm_name=storm_name,
+                                                         issue_time=pts[0].time,
+                                                         forecaster_confidence=forecaster_confidence,
+                                                         render_context=render_context)
+                    self.last_fig = fig
+                    self.last_pts = pts
+                    self.last_storm_name = storm_name
+                    self.last_forecaster_confidence = forecaster_confidence
+                    self.last_render_context = render_context
+                    
+                    self.after(0, lambda: self._on_preview_track_ready(fig, storm_name, validation_result))
+                except Exception as e:
+                    self.after(0, lambda e=e: messagebox.showerror("Preview Error", str(e)))
+                    self.after(0, lambda: self._set_buttons_loading(False))
+            
+            threading.Thread(target=_run, daemon=True).start()
         except Exception as e:
             messagebox.showerror("Preview Error", str(e))
+
+    def _on_preview_track_ready(self, fig, storm_name, validation_result):
+        self._set_buttons_loading(False)
+        self.status_label.config(text="Track plot ready ✓")
+        # Show warnings if any
+        if validation_result.has_warnings():
+            self.show_validation_dialog(validation_result, is_warning=True)
+        self.show_preview(fig, title=f"Track Preview - {storm_name}")
 
     def save_track(self):
         path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Image", "*.png")])
@@ -1220,16 +1343,28 @@ class DataEntryScreen(tk.Frame):
                     is_interpolated=p['is_interpolated']
                 ) for p in points
             ]
-            fig = storm_prognostic.plot_storm_prognostic(pts, storm_name=storm_name, issue_time=pts[0].time)
-            self.last_prognostic_fig = fig
             
-            # Show warnings if any
-            if validation_result.has_warnings():
-                self.show_validation_dialog(validation_result, is_warning=True)
+            self._set_buttons_loading(True, "Generating prognostic plot… ⏳")
             
-            self.show_preview(fig, title=f"Prognostic Preview - {storm_name}")
+            def _run():
+                try:
+                    fig = storm_prognostic.plot_storm_prognostic(pts, storm_name=storm_name, issue_time=pts[0].time)
+                    self.last_prognostic_fig = fig
+                    self.after(0, lambda: self._on_preview_prog_ready(fig, storm_name, validation_result))
+                except Exception as e:
+                    self.after(0, lambda e=e: messagebox.showerror("Preview Error", str(e)))
+                    self.after(0, lambda: self._set_buttons_loading(False))
+                    
+            threading.Thread(target=_run, daemon=True).start()
         except Exception as e:
             messagebox.showerror("Preview Error", str(e))
+
+    def _on_preview_prog_ready(self, fig, storm_name, validation_result):
+        self._set_buttons_loading(False)
+        self.status_label.config(text="Prognostic plot ready ✓")
+        if validation_result.has_warnings():
+            self.show_validation_dialog(validation_result, is_warning=True)
+        self.show_preview(fig, title=f"Prognostic Preview - {storm_name}")
 
     def save_prognostic(self):
         if not self.last_prognostic_fig:
@@ -1268,18 +1403,29 @@ class DataEntryScreen(tk.Frame):
                 ) for p in points
             ]
 
-            fig = storm_ri_plot.plot_ri_from_forecast_points(
-                pts, window_hours=24, storm_name=storm_name
-            )
-            self.last_ri_fig = fig
+            self._set_buttons_loading(True, "Generating RI plot… ⏳")
+            
+            def _run():
+                try:
+                    fig = storm_ri_plot.plot_ri_from_forecast_points(
+                        pts, window_hours=24, storm_name=storm_name
+                    )
+                    self.last_ri_fig = fig
+                    self.after(0, lambda: self._on_preview_ri_ready(fig, storm_name, validation_result))
+                except Exception as e:
+                    self.after(0, lambda e=e: messagebox.showerror("RI Preview Error", str(e)))
+                    self.after(0, lambda: self._set_buttons_loading(False))
 
-            # Show warnings if any
-            if validation_result.has_warnings():
-                self.show_validation_dialog(validation_result, is_warning=True)
-
-            self.show_preview(fig, title=f"RI (dV/dt) Preview — {storm_name}")
+            threading.Thread(target=_run, daemon=True).start()
         except Exception as e:
             messagebox.showerror("RI Preview Error", str(e))
+
+    def _on_preview_ri_ready(self, fig, storm_name, validation_result):
+        self._set_buttons_loading(False)
+        self.status_label.config(text="RI plot ready ✓")
+        if validation_result.has_warnings():
+            self.show_validation_dialog(validation_result, is_warning=True)
+        self.show_preview(fig, title=f"RI (dV/dt) Preview — {storm_name}")
 
     def save_ri(self):
         """Save the RI plot to a PNG file."""
@@ -1297,23 +1443,36 @@ class DataEntryScreen(tk.Frame):
             messagebox.showerror("Save Error", str(e))
 
     def show_preview(self, fig, title="Preview"):
-        # Save to temp file and show in a popup
-        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
-            fig.savefig(tmp.name, dpi=150, bbox_inches='tight', pad_inches=0.2)
-            tmp_path = tmp.name
-        img = Image.open(tmp_path)
-        img.thumbnail((700, 500))
-        img_tk = ImageTk.PhotoImage(img)
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         win = tk.Toplevel(self)
         win.title(title)
-        lbl = tk.Label(win, image=img_tk)
-        lbl.image = img_tk
-        lbl.pack()
-        tk.Button(win, text="Close", command=win.destroy).pack(pady=5)
+        win.geometry("900x700")
+        win.configure(bg=DARK_BG)
+        
+        # Add frame for plotting area
+        plot_frame = tk.Frame(win, bg=DARK_BG)
+        plot_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+        canvas.draw()
+        
+        # Add toolbar
+        toolbar_frame = tk.Frame(win, bg=DARK_BG)
+        toolbar_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=5)
+        
+        toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+        toolbar.update()
+        
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        tk.Button(toolbar_frame, text="Close Preview", command=win.destroy,
+                  bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"),
+                  relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT, padx=10, pady=2)
 
     def get_forecast_points(self):
         points = []
-        for item in self.tree.get_children():
+        errors = []
+        for i, item in enumerate(self.tree.get_children()):
             values = self.tree.item(item, 'values')
             try:
                 time = pd.to_datetime(values[0], utc=True)
@@ -1335,7 +1494,14 @@ class DataEntryScreen(tk.Frame):
                     'is_interpolated': is_interpolated
                 })
             except Exception as e:
-                messagebox.showwarning("Input Error", f"Invalid data in row: {e}")
+                errors.append(f"Row {i+1}: {e}")
+                
+        if errors:
+            msg = "Invalid data found in rows:\n" + "\n".join(errors[:5])
+            if len(errors) > 5:
+                msg += f"\n... and {len(errors) - 5} more."
+            messagebox.showwarning("Input Error", msg)
+            
         return points
     
     def validate_data(self):
