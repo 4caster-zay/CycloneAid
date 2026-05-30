@@ -163,20 +163,28 @@ def _validate_intensity_consistency(forecast_points, result):
 
 
 def _validate_landfall_locations(forecast_points, result):
-    """Check if landfall points are actually offshore."""
-    # This is a simplified check - in reality, would need land/sea mask
-    # For now, flag if landfall is set but coordinates suggest offshore
-    # (e.g., very low latitude/longitude in Western Pacific context)
+    """Check if landfall points are actually over land using global-land-mask."""
+    try:
+        from global_land_mask import globe
+        has_mask = True
+    except ImportError:
+        has_mask = False
     
     for i, pt in enumerate(forecast_points):
         if pt.landfall:
-            # Basic check: if coordinates are clearly in open ocean
-            # (This is heuristic - proper check would use land/sea mask)
-            if pt.lat < 5 or pt.lat > 35 or pt.lon < 100 or pt.lon > 150:
-                result.add_soft_warning(
-                    f"Point {i+1}: Landfall flagged at ({pt.lat:.2f}°N, {pt.lon:.2f}°E) "
-                    f"but location may be offshore"
-                )
+            if has_mask:
+                if not globe.is_land(pt.lat, pt.lon):
+                    result.add_soft_warning(
+                        f"Point {i+1}: Landfall flagged at ({pt.lat:.2f}°N, {pt.lon:.2f}°E) "
+                        f"but location is technically over water."
+                    )
+            else:
+                # Fallback to heuristic
+                if pt.lat < 5 or pt.lat > 40 or pt.lon < 100 or pt.lon > 150:
+                     result.add_soft_warning(
+                        f"Point {i+1}: Landfall flagged at ({pt.lat:.2f}°N, {pt.lon:.2f}°E) "
+                        f"which is outside typical regional land areas."
+                    )
 
 
 def _validate_position_jumps(forecast_points, result):

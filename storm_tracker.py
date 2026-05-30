@@ -15,7 +15,7 @@ from scipy.interpolate import interp1d
 import numpy as np
 from rtree import index
 from functools import lru_cache
-from datetime import timedelta
+from datetime import datetime, timezone, timedelta
 import matplotlib.dates as mdates
 import xml.etree.ElementTree as ET
 
@@ -241,46 +241,88 @@ def read_gpx_to_dataframe(gpx_path):
         raise ValueError(f"GPX file produced no valid points: {gpx_path}")
     return df
 
-def find_nearest_city(point_lon, point_lat, cities_data, max_distance_km=200):
-    """Find the nearest city to a given point within max_distance_km.
+# ─── Global Caches for Geography ───
+_CITY_CACHE = None
+_CITY_INDEX = None
+_PROVINCE_CACHE = None
+
+def _get_city_data():
+    """Load and index populated places data (singleton)."""
+    global _CITY_CACHE, _CITY_INDEX
+    if _CITY_CACHE is not None:
+        return _CITY_CACHE, _CITY_INDEX
+
+    pop_shp = shpreader.natural_earth(resolution='10m', category='cultural', name='populated_places')
+    _CITY_CACHE = []
+    _CITY_INDEX = index.Index()
     
-    Args:
-        point_lon (float): Longitude of the point
-        point_lat (float): Latitude of the point
-        cities_data (list): List of (lon, lat, name, population, is_capital) tuples
-        max_distance_km (float): Maximum distance to consider in kilometers
-        
-    Returns:
-        tuple: (name, lon, lat, distance_km) or None if no city found
-    """
-    def haversine_distance(lon1, lat1, lon2, lat2):
-        R = 6371  # Earth's radius in kilometers
-        
-        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
-        dlon = lon2 - lon1
-        dlat = lat2 - lat1
-        
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        c = 2 * atan2(sqrt(a), sqrt(1-a))
-        return R * c
+    reader = shpreader.Reader(pop_shp)
+    for i, rec in enumerate(reader.records()):
+        lon, lat = rec.geometry.x, rec.geometry.y
+        name = rec.attributes['NAME']
+        population = rec.attributes.get('POP_MAX', 0)
+        is_capital = (
+            rec.attributes.get('FEATURECLA', '').lower() in ['admin-0 capital', 'admin-1 capital', 'admin-1 region capital'] or
+            rec.attributes.get('CAPITAL', '').lower() in ['admin-1 capital', 'yes', 'primary'] or
+            rec.attributes.get('ADM1CAP', 0) == 1
+        )
+        entry = (lon, lat, name, population, is_capital)
+        _CITY_CACHE.append(entry)
+        _CITY_INDEX.insert(i, (lon, lat, lon, lat))
     
+    return _CITY_CACHE, _CITY_INDEX
+
+def _get_ph_provinces():
+    """Load Philippine province boundaries (singleton)."""
+    global _PROVINCE_CACHE
+    if _PROVINCE_CACHE is not None:
+        return _PROVINCE_CACHE
+    
+    admin1_shp = shpreader.natural_earth(resolution='10m', category='cultural', name='admin_1_states_provinces_lines')
+    _PROVINCE_CACHE = []
+    reader = shpreader.Reader(admin1_shp)
+    for rec in reader.records():
+        if rec.attributes.get('admin', rec.attributes.get('adm0_name')) == 'Philippines':
+            _PROVINCE_CACHE.append(rec.geometry)
+    return _PROVINCE_CACHE
+
+def find_nearest_city(point_lon, point_lat, cities_data=None, max_distance_km=250):
+    """Find the nearest city using spatial index for performance."""
+    if cities_data is None:
+        cities_data, city_idx = _get_city_data()
+    else:
+        # Fallback for manual data: search all
+        city_idx = None
+
+    def haversine(lon1, lat1, lon2, lat2):
+        R = 6371
+        phi1, phi2 = radians(lat1), radians(lat2)
+        dphi, dlambda = radians(lat2-lat1), radians(lon2-lon1)
+        a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
+        return R * 2 * atan2(sqrt(a), sqrt(1-a))
+
+    # Spatial search if index available
+    if city_idx:
+        # Search roughly within double the max_distance in degrees (safe bound)
+        buf = max_distance_km / 111.0
+        candidates = list(_CITY_INDEX.intersection((point_lon - buf, point_lat - buf, point_lon + buf, point_lat + buf)))
+        found_cities = [cities_data[i] for i in candidates]
+    else:
+        found_cities = cities_data
+
     nearest_city = None
-    min_distance = float('inf')
-    
-    for city_lon, city_lat, name, pop, is_capital in cities_data:
-        distance = haversine_distance(point_lon, point_lat, city_lon, city_lat)
-        if distance <= max_distance_km and distance < min_distance:
-            min_distance = distance
-            nearest_city = (name, city_lon, city_lat, distance)
-    
+    min_dist = float('inf')
+    for clon, clat, name, pop, is_cap in found_cities:
+        dist = haversine(point_lon, point_lat, clon, clat)
+        if dist <= max_distance_km and dist < min_dist:
+            min_dist = dist
+            nearest_city = (name, clon, clat, dist)
     return nearest_city
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=256)
 def calculate_buffer_size(lat, radius_km):
-    """Calculate buffer size with latitude correction (cached for performance)"""
-    lat_deg = radius_km/111.0
-    lon_deg = radius_km/(111.0 * cos(radians(lat)))
-    return (lat_deg + lon_deg) / 2
+    """Calculate buffer size with latitude correction (cached)."""
+    return (radius_km / 111.0 + radius_km / (111.0 * cos(radians(lat)))) / 2
 
 def create_optimized_buffers(forecast_points, table, issue_time, track_times):
     """Create optimized buffer generation with reduced computational overhead"""
@@ -358,27 +400,18 @@ def create_optimized_buffers(forecast_points, table, issue_time, track_times):
     return unary_union(buffers)
 
 def optimize_city_processing(cities_data, cone):
-    """Process cities with spatial indexing for improved performance"""
-    # Create spatial index
-    idx = index.Index()
-    for i, (lon, lat, name, pop, is_capital) in enumerate(cities_data):
-        idx.insert(i, (lon, lat, lon, lat))
-    
-    # Get cone bounds for pre-filtering
+    """Pre-filter cities using spatial indexing against the uncertainty cone."""
+    cities, city_idx = _get_city_data()
     bounds = cone.bounds
-    bbox = box(*bounds)
+    candidates = list(city_idx.intersection(bounds))
     
-    # Pre-filter cities using spatial index
-    cities_in_bbox = []
-    for i in idx.intersection(bounds):
-        lon, lat, name, pop, is_capital = cities_data[i]
-        if Point(lon, lat).within(bbox):
-            cities_in_bbox.append((lon, lat, name, pop, is_capital))
-    
-    # Final filtering using actual cone
-    return [(lon, lat, name, pop, is_capital) 
-            for lon, lat, name, pop, is_capital in cities_in_bbox 
-            if Point(lon, lat).within(cone)]
+    # Precise filtering
+    filtered = []
+    for i in candidates:
+        lon, lat, name, pop, is_cap = cities[i]
+        if cone.contains(Point(lon, lat)):
+            filtered.append((lon, lat, name, pop, is_cap))
+    return filtered
 
 def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forecaster_confidence='Moderate', render_context=None):
     """
@@ -495,51 +528,13 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
     gl.top_labels = False
     gl.right_labels = False
 
-    # Add provincial boundaries for Philippines
-    admin1_shp = shpreader.natural_earth(
-        resolution='10m',  # Restored to 10m resolution
-        category='cultural',
-        name='admin_1_states_provinces_lines'
-    )
-    
-    reader = shpreader.Reader(admin1_shp)
-    for rec in reader.records():
-        if rec.attributes.get('admin', rec.attributes.get('adm0_name')) == 'Philippines':
-            geometries = [rec.geometry]
-            ax.add_geometries(
-                geometries,
-                crs=ccrs.PlateCarree(),
-                facecolor='none',
-                edgecolor='#FFD700',
-                linewidth=0.8,
-                alpha=0.3,
-                zorder=2
-            )
+    # Geography data (using optimized singleton caches)
+    ph_provinces = _get_ph_provinces()
+    for geom in ph_provinces:
+        ax.add_geometries([geom], crs=ccrs.PlateCarree(), facecolor='none',
+                          edgecolor='#FFD700', linewidth=0.8, alpha=0.3, zorder=2)
 
-    # Collect cities data with better capital identification
-    pop_shp = shpreader.natural_earth(
-        resolution='10m',  # Restored to 10m resolution
-        category='cultural',
-        name='populated_places'
-    )
-    
-    cities_data = []  # Store as (lon, lat, name, population, is_capital)
-    reader = shpreader.Reader(pop_shp)
-    for rec in reader.records():
-        lon, lat = rec.geometry.x, rec.geometry.y
-        name = rec.attributes['NAME']
-        population = rec.attributes.get('POP_MAX', 0)
-        
-        # Check if it's a capital using multiple Natural Earth attributes
-        is_capital = (
-            rec.attributes.get('FEATURECLA', '').lower() in [
-                'admin-0 capital', 'admin-1 capital', 'admin-1 region capital'
-            ] or
-            rec.attributes.get('CAPITAL', '').lower() in ['admin-1 capital', 'yes', 'primary'] or
-            rec.attributes.get('ADM1CAP', 0) == 1
-        )
-        
-        cities_data.append((lon, lat, name, population, is_capital))
+    cities_data, _ = _get_city_data()
 
     # Layer: city_labels
     show_cities = render_context is None or (LAYER_CITY_LABELS is not None and render_context.is_layer_visible(LAYER_CITY_LABELS))
@@ -818,14 +813,13 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
         if render_context is not None and getattr(render_context, 'metadata_lines', None):
             metadata_lines = render_context.metadata_lines
         else:
-            from datetime import datetime
             try:
                 import storm_tracker_gui
                 version = storm_tracker_gui.VERSION
             except (ImportError, AttributeError):
-                version = "Alpha 0.8.0"
+                version = "Alpha 0.9"
             metadata_lines = [
-                f"Generated: {datetime.utcnow():%Y-%m-%d %H%MZ} UTC",
+                f"Generated: {datetime.now(timezone.utc):%Y-%m-%d %H%MZ} UTC",
                 f"CycloneAid {version}",
                 f"Forecaster Confidence: {forecaster_confidence}",
                 f"Valid: {issue_time:%Y-%m-%d %H00Z} to {forecast_points[-1].time:%Y-%m-%d %H00Z}",

@@ -2,32 +2,39 @@
 
 **Tropical Cyclone Forecast Track & Intensity Analysis Suite**
 
-CycloneAid (Alpha 0.8.0) is a comprehensive Python-based desktop application built for visualizing hurricane and typhoon forecasts. Created by Forecaster Zayed, the tool brings the power of programmatic map rendering and intensity plotting into an intuitive graphical interface. It bridges the gap between raw tracking data (CSV/GPX) and broadcast-ready graphics, generating detailed track maps, intensity prognostic charts, and real-time rapid intensification diagnostic plots, all on dark-mode cartography.
+CycloneAid (Alpha 0.9.1) is a comprehensive Python-based desktop application built for hurricane and typhoon forecasting. Created by Forecaster Zayed, the suite bridges the gap between raw tracking data and broadcast-ready graphics, featuring real-time interactive mapping and advanced spatial analysis.
 
 ---
 
 ## ✦ Features ✦
 
+### 🗺️ Command Center Live Map (New in 0.9)
+Interactive slippy map integrated directly into the data entry workflow.
+- **Two-way Sync**: Table edits update map markers in real-time, and vice versa.
+- **Right-Click Entry**: Add storm data points directly via the map interface.
+- **Auto-Landfall**: Real-time detection using high-resolution land masks.
+- **KML/KMZ Support**: Import spatial data directly from Google Earth and other GIS tools.
+
 ### 🗺️ Storm Track Plot
-Generate high-fidelity forecast track maps using `Cartopy`.
-- Automated uncertainty cones and city overlays.
-- Tropical cyclone intensity classifications with custom color coding.
-- Dark-mode stylized cartography to highlight key weather features.
+High-fidelity forecast track maps using `Cartopy`.
+- Automated uncertainty cones and city proximity overlays.
+- Tropical cyclone intensity classifications with standard color coding.
+- **Spatial Indexing**: Lightning-fast city search using R-tree optimization.
 
 ### 📊 Prognostic Chart
-Visualize intensity timelines to track storm evolution.
-- Auto-detected category changes and landfall events.
-- Easy-to-read proximity analysis for nearby cities.
+Visualize intensity timelines and key storm lifecycle events.
+- Auto-detected category changes and landfall timestamps.
+- Integrated event table with nearest-city distance analysis.
 
 ### ⚡ Rapid Intensification (RI)
 Detailed dV/dt intensity change rate analysis.
-- WMO RI threshold highlighting.
+- WMO RI threshold highlighting (30kt / 24h).
 - Peak-event annotation on dark-mode time-series plots.
 
 ### 📋 Data Management
-Interactive table built specifically for rapid data entry.
+Interactive table built specifically for rapid meteorological data entry.
 - Excel-like row management: insert, duplicate, reorder, and edit cells via dropdowns.
-- Supports importing and exporting both CSV and GPX track files.
+- Supports importing and exporting CSV, GPX, and KML track files.
 
 ### 🎨 Export Presets
 Switch easily between distinct styles for rendering output.
@@ -38,6 +45,7 @@ Switch easily between distinct styles for rendering output.
 Automatic QC checks keeping human errors at bay.
 - Checks coordinate bounds, wind speed continuity, and time ordering.
 - Classifies potential issues as hard errors or soft warnings.
+- **Precision Masking**: Landfall verification using `global-land-mask`.
 
 ---
 
@@ -86,7 +94,7 @@ Created exports are saved in the `Tracks/`, `Prognostics/`, and `RI_plots/` dire
 
 ## ⚠️ Disclaimer
 **ALPHA — For testing and development only. Not for operational use.**
-This toolkit is highly experimental (Alpha 0.8.0). Please verify outputs against official agency data (NHC, JTWC, JMA, PAGASA, etc.).
+This toolkit is experimental (Alpha 0.9.1). Please verify outputs against official agency data (NHC, JTWC, JMA, PAGASA, etc.).
 
 ## 📝 License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

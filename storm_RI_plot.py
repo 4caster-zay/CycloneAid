@@ -18,9 +18,9 @@ DEFAULT_RI_THRESHOLD_KT_24H = 30.0
 # CycloneAid version for metadata
 try:
     import storm_tracker_gui
-    CYCLONEAID_VERSION = getattr(storm_tracker_gui, "VERSION", "Alpha 0.8.0")
+    CYCLONEAID_VERSION = getattr(storm_tracker_gui, "VERSION", "Alpha 0.9.1")
 except (ImportError, AttributeError):
-    CYCLONEAID_VERSION = "Alpha 0.8.0"
+    CYCLONEAID_VERSION = "Alpha 0.9.1"
 
 
 def _wind_to_kmh(wind_series, unit_hint=None):
@@ -185,7 +185,7 @@ def plot_ri_timeseries(
     # Metadata footer
     meta = [
         f"CycloneAid {CYCLONEAID_VERSION}",
-        f"Generated: {datetime.utcnow():%Y-%m-%d %H%MZ} UTC",
+        f"Generated: {datetime.now(timezone.utc):%Y-%m-%d %H%MZ} UTC",
         f"RI threshold: ≥{ri_threshold_kt_24h} kt / 24h",
     ]
     ax.text(0.5, -0.12, "  |  ".join(meta), transform=ax.transAxes,
@@ -223,6 +223,7 @@ def plot_ri_from_forecast_points(forecast_points, window_hours=24, ri_threshold_
 if __name__ == "__main__":
     import sys
     import os
+    from datetime import timezone
 
     if not os.path.exists("forecast.csv"):
         raise FileNotFoundError("forecast.csv not found")
@@ -237,7 +238,7 @@ if __name__ == "__main__":
     fig = plot_ri_timeseries(df, time_col=time_col, wind_col=wind_col, storm_name=storm_name, ri_threshold_kt_24h=ri_threshold)
     out_dir = "RI_plots"
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"{storm_name}_dVdt_{datetime.utcnow():%Y%m%d%H%M}.png")
+    out_path = os.path.join(out_dir, f"{storm_name}_dVdt_{datetime.now(timezone.utc):%Y%m%d%H%M}.png")
     fig.savefig(out_path, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     print(f"Saved: {out_path}")

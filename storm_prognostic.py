@@ -66,6 +66,10 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     if not issue_time:
         issue_time = forecast_points[0].time
 
+    # Access shared city data from storm_tracker
+    import storm_tracker
+    cities_data, _ = storm_tracker._get_city_data()
+
     # Dark-mode
     plt.style.use('dark_background')
     fig = plt.figure(figsize=(12, 8))
@@ -81,7 +85,6 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     winds = [pt.wind_kt * 1.852 for pt in forecast_points]  # Convert to km/h
     intensities = [pt.intensity_class for pt in forecast_points]
     storm_types = [pt.storm_type for pt in forecast_points]
-    unique_intensities = set(intensities)
     
     # Plot intensity line with gradient
     ax1.fill_between(times, winds, alpha=0.2, color='white')
@@ -89,12 +92,10 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     
     # Plot points and labels efficiently
     for t, w, intensity, storm_type in zip(times, winds, intensities, storm_types):
-        # Color based on intensity_class
         color = category_colors.get(intensity, 'white')
-        # Create composite label
         label = intensity
         if storm_type != 'Tropical':
-            label += f" ({storm_type[:4]})"  # Abbreviated
+            label += f" ({storm_type[:4]})"
         
         ax1.plot(t, w, 'o', color=color, markeredgecolor='white', 
                 markeredgewidth=1.5, markersize=10)
@@ -120,14 +121,12 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     ax1.set_ylabel('Wind Speed (km/h)', fontsize=10)
     ax1.grid(True, alpha=0.2)
     
-    # Add standard lead time indicators spanning the entire height
+    # Add standard lead time indicators
     standard_leadtimes = [0, 12, 24, 36, 48, 72, 96, 120]
     for leadtime in standard_leadtimes:
         leadtime_time = issue_time + timedelta(hours=leadtime)
-        if leadtime_time <= times[-1]:  # Only show if within forecast period
-            # Add vertical line spanning the entire height
+        if leadtime_time <= times[-1]:
             ax1.axvline(leadtime_time, color='white', linestyle=':', alpha=0.15)
-            # Add subtle lead time label at 300 km/h
             ax1.text(leadtime_time, 300, f'T+{leadtime}h',
                     color='white', alpha=0.6, fontsize=8,
                     ha='center', va='center',
@@ -137,144 +136,82 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d\n%HZ'))
     plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
 
-    # Filter and sort intensity classes for display (only show TD-C5, not SD/SS which are storm types)
-    filtered_cats = {intensity: speed for intensity, speed in CATEGORY_THRESHOLDS.items() 
-                    if intensity in ['TD', 'TS', 'STS', 'C1', 'C2', 'C3', 'C4', 'C5']}
+    # Intensity class bands
+    filtered_cats = {i: s for i, s in CATEGORY_THRESHOLDS.items() 
+                    if i in ['TD', 'TS', 'STS', 'C1', 'C2', 'C3', 'C4', 'C5']}
     sorted_cats = sorted(filtered_cats.items(), key=lambda x: x[1])
     
-    # Add intensity class bands efficiently
     prev_speed = 0
     for intensity, speed in sorted_cats:
         color = category_colors.get(intensity, 'gray')
         ax1.axhspan(prev_speed, speed, color=color, alpha=0.03)
         ax1.axhline(y=speed, color=color, linestyle='--', alpha=0.4)
-        
-        # Label based on intensity class
-        label = intensity
-        
-        ax1.text(times[-1], (prev_speed + speed) / 2, label,
-                color=color, fontsize=8, ha='left', va='center',
-                bbox=dict(facecolor='#2f2f2f', alpha=0.7, pad=1))
+        ax1.text(times[-1], (prev_speed + speed) / 2, intensity,
+                color=color, fontsize=8, ha='left', va='center')
         prev_speed = speed
 
     # 2. Information Panel (bottom)
     ax2 = fig.add_subplot(gs[1])
     ax2.axis('off')
     
-    # Load cities data (same as in storm_tracker.py)
-    pop_shp = shpreader.natural_earth(
-        resolution='10m',
-        category='cultural',
-        name='populated_places'
-    )
-    cities_data = []  # Store as (lon, lat, name, population, is_capital)
-    reader = shpreader.Reader(pop_shp)
-    for rec in reader.records():
-        lon, lat = rec.geometry.x, rec.geometry.y
-        name = rec.attributes['NAME']
-        population = rec.attributes.get('POP_MAX', 0)
-        is_capital = (
-            rec.attributes.get('FEATURECLA', '').lower() in [
-                'admin-0 capital', 'admin-1 capital', 'admin-1 region capital'
-            ] or
-            rec.attributes.get('CAPITAL', '').lower() in ['admin-1 capital', 'yes', 'primary'] or
-            rec.attributes.get('ADM1CAP', 0) == 1
-        )
-        cities_data.append((lon, lat, name, population, is_capital))
-
     # Prepare table data efficiently
     table_data = []
     table_colors = []
     
-    # Add initial conditions
-    initial_pt = forecast_points[0]
-    # Find nearest city for initial point
-    nearest = find_nearest_city(initial_pt.lon, initial_pt.lat, cities_data)
-    if nearest:
-        city_name, city_lon, city_lat, distance = nearest
-        location_str = f"{city_name} ({distance:.0f}km)"
-        location_color = 'white'
-    else:
-        location_str = ""
-        location_color = 'white'
-    table_data.append([
-        f"{initial_pt.time:%Y-%m-%d %H00Z}",
-        "Initial Conditions",
-        f"{initial_pt.category}",
-        f"{int(initial_pt.wind_kt * 1.852)} km/h",
-        location_str
-    ])
-    table_colors.append(['white', 'white', category_colors.get(initial_pt.category, 'white'), 'white', location_color])
-    
-    # Add category changes and landfall information efficiently
-    for i in range(1, len(forecast_points)):
-        prev_pt = forecast_points[i-1]
-        curr_pt = forecast_points[i]
-        nearest = find_nearest_city(curr_pt.lon, curr_pt.lat, cities_data)
-        if nearest:
-            city_name, city_lon, city_lat, distance = nearest
-            location_str = f"{city_name} ({distance:.0f}km)"
-            location_color = 'white'
+    # Add events
+    for i, pt in enumerate(forecast_points):
+        # Find nearest city for each point
+        nearest = storm_tracker.find_nearest_city(pt.lon, pt.lat, cities_data)
+        location_str = f"{nearest[0]} ({nearest[3]:.0f}km)" if nearest else ""
+        
+        is_event = False
+        event_name = ""
+        
+        if i == 0:
+            is_event = True
+            event_name = "Initial Conditions"
         else:
-            location_str = ""
-            location_color = 'white'
-        # Check for intensity or storm type changes
-        if (curr_pt.intensity_class != prev_pt.intensity_class or 
-            curr_pt.storm_type != prev_pt.storm_type):
-            hours = int((curr_pt.time - issue_time).total_seconds()/3600)
-            prev_label = prev_pt.intensity_class
-            if prev_pt.storm_type != 'Tropical':
-                prev_label += f" ({prev_pt.storm_type[:4]})"
-            curr_label = curr_pt.intensity_class
-            if curr_pt.storm_type != 'Tropical':
-                curr_label += f" ({curr_pt.storm_type[:4]})"
-            table_data.append([
-                f"{curr_pt.time:%Y-%m-%d %H00Z}",
-                f"Intensity Change (T+{hours}h)",
-                f"{prev_label} → {curr_label}",
-                f"{int(curr_pt.wind_kt * 1.852)} km/h",
-                location_str
-            ])
-            table_colors.append(['white', 'white', category_colors.get(curr_pt.intensity_class, 'white'), 'white', location_color])
-        if curr_pt.landfall:
-            hours = int((curr_pt.time - issue_time).total_seconds()/3600)
-            # For landfall, highlight city in red
-            if nearest:
-                location_str = f"{city_name}"
+            prev_pt = forecast_points[i-1]
+            if pt.intensity_class != prev_pt.intensity_class or pt.storm_type != prev_pt.storm_type:
+                is_event = True
+                hours = int((pt.time - issue_time).total_seconds()/3600)
+                event_name = f"Intensity Change (T+{hours}h)"
+            if pt.landfall:
+                is_event = True
+                hours = int((pt.time - issue_time).total_seconds()/3600)
+                event_name = f"Landfall (T+{hours}h)"
                 location_color = 'red'
-            else:
-                location_str = ""
-                location_color = 'red'
-            label = curr_pt.intensity_class
-            if curr_pt.storm_type != 'Tropical':
-                label += f" ({curr_pt.storm_type[:4]})"
+        
+        if is_event:
+            label = pt.intensity_class
+            if pt.storm_type != 'Tropical':
+                label += f" ({pt.storm_type[:4]})"
+            
             table_data.append([
-                f"{curr_pt.time:%Y-%m-%d %H00Z}",
-                f"Landfall (T+{hours}h)",
+                f"{pt.time:%Y-%m-%d %H00Z}",
+                event_name,
                 label,
-                f"{int(curr_pt.wind_kt * 1.852)} km/h",
+                f"{int(pt.wind_kt * 1.852)} km/h",
                 location_str
             ])
-            table_colors.append(['white', 'red', category_colors.get(curr_pt.intensity_class, 'white'), 'white', location_color])
-    
-    # Sort and create table efficiently
-    table_data = sorted(zip(table_data, table_colors), key=lambda x: pd.to_datetime(x[0][0]))
-    table_data, table_colors = zip(*table_data)
-    
+            
+            row_colors = ['white'] * 5
+            row_colors[1] = 'red' if 'Landfall' in event_name else 'white'
+            row_colors[2] = category_colors.get(pt.intensity_class, 'white')
+            row_colors[4] = 'red' if 'Landfall' in event_name else 'white'
+            table_colors.append(row_colors)
+
     table = ax2.table(
         cellText=table_data,
         colLabels=['Time (UTC)', 'Event', 'Category', 'Intensity', 'Location'],
-        loc='center',
-        cellLoc='left',
-        colWidths=[0.2, 0.2, 0.2, 0.15, 0.25],
+        loc='center', cellLoc='left',
+        colWidths=[0.2, 0.2, 0.15, 0.15, 0.3],
         bbox=[0, 0, 1, 1]
     )
     
-    # Style table efficiently
     table.auto_set_font_size(False)
     table.set_fontsize(8)
     
-    # Style header and data cells efficiently
     for i in range(5):
         table[0, i].set_facecolor('#2f2f2f')
         table[0, i].set_text_props(color='white', weight='bold')
@@ -288,19 +225,14 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
             cell.set_height(0.12)
             cell.set_edgecolor('#3f3f3f')
 
-    # Main title
     plt.suptitle(f"{storm_name} Forecast Prognostic — Issued {issue_time:%Y-%m-%d %H00Z}",
                 color='white', fontsize=16, y=0.98)
+    
     import os
     output_dir = "Prognostics"
     os.makedirs(output_dir, exist_ok=True)
     outfile = os.path.join(output_dir, f"{storm_name}_{issue_time:%Y%m%d%H}_prognostic.png")
-    plt.savefig(outfile,
-                dpi=300,
-                bbox_inches='tight',
-                pad_inches=0.2,
-                facecolor=fig.get_facecolor())
-    # Callers are responsible for closing the figure after use
+    plt.savefig(outfile, dpi=300, bbox_inches='tight', pad_inches=0.2, facecolor=fig.get_facecolor())
     return fig
 
 if __name__ == '__main__':
