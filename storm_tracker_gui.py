@@ -15,7 +15,7 @@ import threading
 import xml.etree.ElementTree as ET
 
 APP_NAME = "CycloneAid"
-VERSION = "Alpha 0.9.1"
+VERSION = "Alpha 0.9.3"
 CREATOR = "Forecaster Zayed"
 
 # ─── Dynamic Module Imports ───
@@ -40,26 +40,160 @@ except ImportError:
 
 # ─── Optional: landmask for auto landfall ───
 try:
-    from global_land_mask import globe as _globe
+    from global_land_mask import globe as _globe  # type: ignore
     _HAS_LANDMASK = True
 except ImportError:
     _HAS_LANDMASK = False
 
 # ─── Optional: tkintermapview ───
 try:
-    import tkintermapview
+    import tkintermapview  # type: ignore
     _HAS_MAP = True
 except ImportError:
     _HAS_MAP = False
 
-# ─── Theme Tokens ───
-PRIMARY_COLOR = "#00adb5"
-DARK_BG = "#222831"
-LIGHT_BG = "#393e46"
-WHITE = "#eeeeee"
-ACCENT = "#FFD700"
-SURFACE = "#2b303b"
-BORDER = "#444"
+# ─── Theme Engine ───
+class Theme:
+    def __init__(self, name, primary, dark_bg, light_bg, text_fg, text_muted, accent, surface, border, bottom_bar_bg, invalid_bg, invalid_fg, warning_bg):
+        self.name = name
+        self.PRIMARY_COLOR = primary
+        self.DARK_BG = dark_bg
+        self.LIGHT_BG = light_bg
+        self.WHITE = text_fg
+        self.TEXT_MUTED = text_muted
+        self.ACCENT = accent
+        self.SURFACE = surface
+        self.BORDER = border
+        self.BOTTOM_BAR_BG = bottom_bar_bg
+        self.INVALID_BG = invalid_bg
+        self.INVALID_FG = invalid_fg
+        self.WARNING_BG = warning_bg
+
+THEMES = {
+    "Typhoon Dark": Theme("Typhoon Dark", "#00adb5", "#0f172a", "#1e293b", "#f8fafc", "#94a3b8", "#FFD700", "#334155", "#475569", "#0f172a", "#4a1a1a", "#ff8080", "#3a3a00"),
+    "Sky Light": Theme("Sky Light", "#0284c7", "#f1f5f9", "#e2e8f0", "#000000", "#475569", "#f59e0b", "#ffffff", "#cbd5e1", "#e0f2fe", "#fee2e2", "#b91c1c", "#fef3c7")
+}
+
+CURRENT_THEME_NAME = "Typhoon Dark"
+CURRENT_THEME = THEMES[CURRENT_THEME_NAME]
+
+PRIMARY_COLOR = CURRENT_THEME.PRIMARY_COLOR
+DARK_BG = CURRENT_THEME.DARK_BG
+LIGHT_BG = CURRENT_THEME.LIGHT_BG
+WHITE = CURRENT_THEME.WHITE
+TEXT_MUTED = CURRENT_THEME.TEXT_MUTED
+ACCENT = CURRENT_THEME.ACCENT
+SURFACE = CURRENT_THEME.SURFACE
+BORDER = CURRENT_THEME.BORDER
+
+def apply_theme_to_widget_tree(widget, old_theme, new_theme):
+    color_map = {
+        old_theme.PRIMARY_COLOR: new_theme.PRIMARY_COLOR,
+        old_theme.DARK_BG: new_theme.DARK_BG,
+        old_theme.LIGHT_BG: new_theme.LIGHT_BG,
+        old_theme.WHITE: new_theme.WHITE,
+        old_theme.TEXT_MUTED: new_theme.TEXT_MUTED,
+        old_theme.ACCENT: new_theme.ACCENT,
+        old_theme.SURFACE: new_theme.SURFACE,
+        old_theme.BORDER: new_theme.BORDER,
+        old_theme.BOTTOM_BAR_BG: new_theme.BOTTOM_BAR_BG,
+        old_theme.INVALID_BG: new_theme.INVALID_BG,
+        old_theme.INVALID_FG: new_theme.INVALID_FG,
+        old_theme.WARNING_BG: new_theme.WARNING_BG,
+        "#1a1e25": new_theme.BOTTOM_BAR_BG,
+        "#222831": new_theme.DARK_BG,
+        "#393e46": new_theme.LIGHT_BG,
+        "#eeeeee": new_theme.WHITE,
+        "#ccc": new_theme.TEXT_MUTED,
+        "#aaa": new_theme.TEXT_MUTED,
+        "#888": new_theme.TEXT_MUTED,
+        "#555": new_theme.TEXT_MUTED,
+        "#444": new_theme.BORDER,
+        "#2b303b": new_theme.SURFACE,
+        "#FFD700": new_theme.ACCENT,
+        "#00adb5": new_theme.PRIMARY_COLOR,
+        "#4a1a1a": new_theme.INVALID_BG,
+        "#ff8080": new_theme.INVALID_FG,
+        "#3a3a00": new_theme.WARNING_BG,
+    }
+    
+    try:
+        if widget.cget('bg') in color_map: widget.config(bg=color_map[widget.cget('bg')])
+    except Exception: pass
+    try:
+        if widget.cget('fg') in color_map: widget.config(fg=color_map[widget.cget('fg')])
+    except Exception: pass
+    try:
+        if widget.cget('activebackground') in color_map: widget.config(activebackground=color_map[widget.cget('activebackground')])
+    except Exception: pass
+    try:
+        if widget.cget('activeforeground') in color_map: widget.config(activeforeground=color_map[widget.cget('activeforeground')])
+    except Exception: pass
+    try:
+        if widget.cget('selectcolor') in color_map: widget.config(selectcolor=color_map[widget.cget('selectcolor')])
+    except Exception: pass
+    try:
+        if widget.cget('highlightbackground') in color_map: widget.config(highlightbackground=color_map[widget.cget('highlightbackground')])
+    except Exception: pass
+    try:
+        if widget.cget('highlightcolor') in color_map: widget.config(highlightcolor=color_map[widget.cget('highlightcolor')])
+    except Exception: pass
+    
+    if isinstance(widget, tk.Button):
+        try:
+            current_text = widget.cget('text')
+            if "Sky Mode" in current_text or "Typhoon Mode" in current_text or "Theme" in current_text:
+                new_text = "🌙 Typhoon Mode" if new_theme.name == "Sky Light" else "☀️ Sky Mode"
+                widget.config(text=new_text)
+        except Exception: pass
+
+    for child in widget.winfo_children():
+        apply_theme_to_widget_tree(child, old_theme, new_theme)
+
+def set_app_theme(theme_name, app_root):
+    global CURRENT_THEME_NAME, CURRENT_THEME
+    global PRIMARY_COLOR, DARK_BG, LIGHT_BG, WHITE, TEXT_MUTED, ACCENT, SURFACE, BORDER
+    
+    if theme_name not in THEMES or theme_name == CURRENT_THEME_NAME: return
+    old_theme = CURRENT_THEME
+    new_theme = THEMES[theme_name]
+    
+    CURRENT_THEME_NAME = theme_name
+    CURRENT_THEME = new_theme
+    
+    PRIMARY_COLOR = new_theme.PRIMARY_COLOR
+    DARK_BG = new_theme.DARK_BG
+    LIGHT_BG = new_theme.LIGHT_BG
+    WHITE = new_theme.WHITE
+    TEXT_MUTED = new_theme.TEXT_MUTED
+    ACCENT = new_theme.ACCENT
+    SURFACE = new_theme.SURFACE
+    BORDER = new_theme.BORDER
+    
+    # Configure ttk styles
+    style = ttk.Style()
+    if 'clam' in style.theme_names():
+        style.theme_use('clam')
+        
+    style.configure("Vertical.TScrollbar", background=SURFACE, troughcolor=DARK_BG, bordercolor=BORDER, arrowcolor=WHITE)
+    style.configure("Horizontal.TScrollbar", background=SURFACE, troughcolor=DARK_BG, bordercolor=BORDER, arrowcolor=WHITE)
+    style.configure("Treeview", background=DARK_BG, foreground=WHITE, fieldbackground=DARK_BG, bordercolor=BORDER)
+    style.configure("Treeview.Heading", background=SURFACE, foreground=PRIMARY_COLOR, bordercolor=BORDER)
+    
+    # Walk tree and apply colors
+    apply_theme_to_widget_tree(app_root, old_theme, new_theme)
+    try:
+        app_root.configure(bg=DARK_BG)
+        if hasattr(app_root, 'current_frame') and hasattr(app_root.current_frame, 'tree'):
+            tree = app_root.current_frame.tree
+            tree.tag_configure('invalid', background=new_theme.INVALID_BG, foreground=new_theme.INVALID_FG)
+            tree.tag_configure('warning', background=new_theme.WARNING_BG, foreground=new_theme.ACCENT)
+            tree.tag_configure('normal', background=new_theme.DARK_BG, foreground=new_theme.WHITE)
+            # Re-apply tags to force refresh
+            for item in tree.get_children():
+                tags = tree.item(item, "tags")
+                tree.item(item, tags=tags)
+    except Exception: pass
 
 # ─── Intensity colour map (shared with storm_tracker.py) ───
 INTENSITY_COLORS = {
@@ -70,6 +204,24 @@ INTENSITY_COLORS = {
 
 # ─── Changelog entries (newest first) ───
 CHANGELOG = [
+    {
+        "version": "Alpha 0.9.3",
+        "date": "2026-06-08",
+        "entries": [
+            "🎨 Theme Overhaul — Sleek dynamic toggle buttons for Sky and Typhoon modes.",
+            "🖌️ Contrast Fixes — Text in Sky Light mode is now true black, and muted text contrast is fixed.",
+            "🔧 Linter Cleanup — Suppressed false-positive IDE warnings for optional modules."
+        ],
+    },
+    {
+        "version": "Alpha 0.9.2",
+        "date": "2026-05-31",
+        "entries": [
+            "🎨 Dynamic Theming — Sky Light and Typhoon Dark modes added.",
+            "📜 Custom Scrollbars — Themed scrollbars matching the active theme.",
+            "🐛 Bug Fix — Addressed internal Tkinter layout warnings for Data Table."
+        ],
+    },
     {
         "version": "Alpha 0.9.1",
         "date": "2026-05-31",
@@ -232,6 +384,14 @@ class HomeScreen(tk.Frame):
         ver_frame.pack(pady=(2, 12))
         tk.Label(ver_frame, text=f" {VERSION} ", font=("Consolas", 11, "bold"),
                  fg=DARK_BG, bg=ACCENT, padx=8, pady=2).pack(side=tk.LEFT, padx=4)
+
+        theme_btn = tk.Button(ver_frame, text="☀️ Sky Mode" if CURRENT_THEME_NAME == "Typhoon Dark" else "🌙 Typhoon Mode", command=lambda: set_app_theme(
+            "Sky Light" if CURRENT_THEME_NAME == "Typhoon Dark" else "Typhoon Dark", 
+            self.winfo_toplevel()
+        ), bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"), relief=tk.FLAT, bd=0, cursor="hand2", padx=14, pady=6)
+        theme_btn.pack(side=tk.LEFT, padx=10)
+        theme_btn.bind("<Enter>", lambda e, b=theme_btn: b.config(bg=ACCENT, fg=DARK_BG))
+        theme_btn.bind("<Leave>", lambda e, b=theme_btn: b.config(bg=LIGHT_BG, fg=WHITE))
 
         # Launch button
         start_btn = tk.Button(
@@ -553,6 +713,14 @@ class DataEntryScreen(tk.Frame):
         ttk.Combobox(topbar, textvariable=self.export_preset_var,
                      values=["Forecaster", "Media"], state="readonly", width=10).pack(side=tk.LEFT, padx=2)
 
+        theme_btn = tk.Button(topbar, text="☀️ Sky Mode" if CURRENT_THEME_NAME == "Typhoon Dark" else "🌙 Typhoon Mode", command=lambda: set_app_theme(
+            "Sky Light" if CURRENT_THEME_NAME == "Typhoon Dark" else "Typhoon Dark", 
+            self.winfo_toplevel()
+        ), bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"), relief=tk.FLAT, bd=0, cursor="hand2", padx=14, pady=6)
+        theme_btn.pack(side=tk.RIGHT, padx=12, pady=4)
+        theme_btn.bind("<Enter>", lambda e, b=theme_btn: b.config(bg=ACCENT, fg=DARK_BG))
+        theme_btn.bind("<Leave>", lambda e, b=theme_btn: b.config(bg=LIGHT_BG, fg=WHITE))
+
         topbar.pack(fill=tk.X, pady=(0, 4))
 
     # ── Treeview table ──
@@ -568,7 +736,7 @@ class DataEntryScreen(tk.Frame):
 
         vsb = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
         hsb = ttk.Scrollbar(self.table_frame, orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscroll=vsb.set, xscroll=hsb.set)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
@@ -578,8 +746,8 @@ class DataEntryScreen(tk.Frame):
         self.tree.bind('<Double-1>', self._on_double_click)
         self.tree.bind('<Button-3>', self._show_row_context_menu)
 
-        self.tree.tag_configure('invalid', background='#4a1a1a', foreground='#ff8080')
-        self.tree.tag_configure('warning', background='#3a3a00', foreground=ACCENT)
+        self.tree.tag_configure('invalid', background=CURRENT_THEME.INVALID_BG, foreground=CURRENT_THEME.INVALID_FG)
+        self.tree.tag_configure('warning', background=CURRENT_THEME.WARNING_BG, foreground=ACCENT)
         self.tree.tag_configure('normal', background=DARK_BG, foreground=WHITE)
 
         self.bind_all("<Delete>", self._on_delete_key)
@@ -1342,6 +1510,7 @@ class DataEntryScreen(tk.Frame):
 
     def _show_validation_dialog(self, vr, is_warning=False):
         win = tk.Toplevel(self)
+        apply_dark_theme(win)
         win.title("Validation Warnings" if is_warning else "Validation Errors")
         win.configure(bg=DARK_BG)
 
@@ -1520,6 +1689,7 @@ class DataEntryScreen(tk.Frame):
     def _show_preview(self, fig, title="Preview"):
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
         win = tk.Toplevel(self)
+        apply_dark_theme(win)
         win.title(title)
         win.geometry("900x700")
         win.configure(bg=DARK_BG)
@@ -1543,9 +1713,34 @@ class DataEntryScreen(tk.Frame):
 # APPLICATION ROOT
 # ═════════════════════════════════════════════════════════════════════════════
 
+def apply_dark_theme(window):
+    """Enable immersive dark mode for Windows 10/11 titlebar."""
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            window.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
+            if not hwnd:
+                hwnd = window.winfo_id()
+            
+            rendering = ctypes.c_int(1)
+            # DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Windows 11)
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                hwnd, 20, ctypes.byref(rendering), ctypes.sizeof(rendering)
+            )
+            if res != 0:
+                # DWMWA_USE_IMMERSIVE_DARK_MODE = 19 (Windows 10)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, 19, ctypes.byref(rendering), ctypes.sizeof(rendering)
+                )
+        except Exception:
+            pass
+
+
 class StormTrackerApp(tk.Tk):
     def __init__(self):
         super().__init__()
+        apply_dark_theme(self)
         self.title(f"{APP_NAME} — {VERSION}")
         self.geometry("1300x750")
         self.minsize(1000, 650)
