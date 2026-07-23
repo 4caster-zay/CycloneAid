@@ -53,7 +53,7 @@ Automatic QC checks keeping human errors at bay.
 
 **1. Clone the repository:**
 ```bash
-git clone https://github.com/your-username/cycloneaid.git
+git clone https://github.com/4caster-zay/cycloneaid.git
 cd cycloneaid
 ```
 
