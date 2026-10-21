@@ -2,7 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import timedelta
-from matplotlib.patches import Patch
 
 # ─── Category Colors ───
 category_colors = {
@@ -20,37 +19,12 @@ category_colors = {
     'SS':  '#007d7a',  # Darker cyan for subtropical storm
 }
 
-# ─── Category Thresholds (km/h) ───
-CATEGORY_THRESHOLDS = {
-    'TD': 63,
-    'TS': 88,
-    'STS': 118,
-    'C1': 153,
-    'C2': 177,
-    'C3': 208,
-    'C4': 251,
-    'C5': 300,
-    'SD': 63,   # Same as TD
-    'SS': 88    # Same as TS
-}
+from cycloneaid.model import INTENSITY_THRESHOLDS, utc_timestamp
+from cycloneaid.geography import find_nearest_city
+from validation import validate_forecast_points
+CATEGORY_THRESHOLDS = {label: threshold*1.852 for threshold, label in INTENSITY_THRESHOLDS}
 
-import cartopy.io.shapereader as shpreader
-from shapely.geometry import Point
-
-def find_nearest_city(lon, lat, cities_data):
-    """Find the nearest city to a given point."""
-    min_distance = float('inf')
-    nearest_city = None
-    for city_lon, city_lat, name, _, _ in cities_data:
-        if lon == city_lon and lat == city_lat:
-            return name, lon, lat, 0.0
-        distance = Point(lon, lat).distance(Point(city_lon, city_lat))
-        if distance < min_distance:
-            min_distance = distance
-            nearest_city = name
-    return nearest_city, lon, lat, min_distance
-
-def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
+def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None, *, geography_mode="full", landfall_events=()):
     """
     Create a prognostic visualization showing storm intensity and key developments over time.
     Args:
@@ -66,9 +40,12 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     if not issue_time:
         issue_time = forecast_points[0].time
 
-    # Access shared city data from storm_tracker
-    import storm_tracker
-    cities_data, _ = storm_tracker._get_city_data()
+    result = validate_forecast_points(forecast_points)
+    if result.has_errors():
+        raise ValueError("\n".join(result.hard_errors))
+    issue_time = utc_timestamp(issue_time)
+    if pd.isna(issue_time) or issue_time > forecast_points[0].time:
+        raise ValueError("Issue time must be valid and no later than the first point")
 
     # Dark-mode
     plt.style.use('dark_background')
@@ -117,7 +94,6 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
 
     # Customize intensity plot
     ax1.set_title('Storm Intensity Forecast', pad=10, fontsize=14)
-    ax1.set_xlabel('Date/Time (UTC)', fontsize=10)
     ax1.set_ylabel('Wind Speed (km/h)', fontsize=10)
     ax1.grid(True, alpha=0.2)
     
@@ -141,14 +117,12 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
                     if i in ['TD', 'TS', 'STS', 'C1', 'C2', 'C3', 'C4', 'C5']}
     sorted_cats = sorted(filtered_cats.items(), key=lambda x: x[1])
     
-    prev_speed = 0
-    for intensity, speed in sorted_cats:
+    for j, (intensity, lower) in enumerate(sorted_cats):
+        upper = sorted_cats[j+1][1] if j+1 < len(sorted_cats) else max(300, max(winds)*1.1)
         color = category_colors.get(intensity, 'gray')
-        ax1.axhspan(prev_speed, speed, color=color, alpha=0.03)
-        ax1.axhline(y=speed, color=color, linestyle='--', alpha=0.4)
-        ax1.text(times[-1], (prev_speed + speed) / 2, intensity,
-                color=color, fontsize=8, ha='left', va='center')
-        prev_speed = speed
+        ax1.axhspan(lower, upper, color=color, alpha=.04)
+        ax1.axhline(lower, color=color, linestyle='--', alpha=.4)
+        ax1.text(times[-1], (lower+upper)/2, intensity, color=color, fontsize=8)
 
     # 2. Information Panel (bottom)
     ax2 = fig.add_subplot(gs[1])
@@ -160,10 +134,6 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
     
     # Add events
     for i, pt in enumerate(forecast_points):
-        # Find nearest city for each point
-        nearest = storm_tracker.find_nearest_city(pt.lon, pt.lat, cities_data)
-        location_str = f"{nearest[0]} ({nearest[3]:.0f}km)" if nearest else ""
-        
         is_event = False
         event_name = ""
         
@@ -174,21 +144,23 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
             prev_pt = forecast_points[i-1]
             if pt.intensity_class != prev_pt.intensity_class or pt.storm_type != prev_pt.storm_type:
                 is_event = True
-                hours = int((pt.time - issue_time).total_seconds()/3600)
+                hours = (pt.time - issue_time).total_seconds()/3600
                 event_name = f"Intensity Change (T+{hours}h)"
             if pt.landfall:
                 is_event = True
-                hours = int((pt.time - issue_time).total_seconds()/3600)
+                hours = (pt.time - issue_time).total_seconds()/3600
                 event_name = f"Landfall (T+{hours}h)"
                 location_color = 'red'
         
         if is_event:
+            nearest = find_nearest_city(pt.lon, pt.lat) if geography_mode == 'full' else None
+            location_str = f"{nearest[0]} ({nearest[3]:.0f}km)" if nearest else ""
             label = pt.intensity_class
             if pt.storm_type != 'Tropical':
                 label += f" ({pt.storm_type[:4]})"
             
             table_data.append([
-                f"{pt.time:%Y-%m-%d %H00Z}",
+                f"{pt.time:%Y-%m-%d %H:%MZ}",
                 event_name,
                 label,
                 f"{int(pt.wind_kt * 1.852)} km/h",
@@ -201,6 +173,22 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
             row_colors[4] = 'red' if 'Landfall' in event_name else 'white'
             table_colors.append(row_colors)
 
+    for event in landfall_events:
+        ax1.plot(event.time, event.wind_kt*1.852, 'X', color='red', markersize=10)
+        ax1.axvline(event.time, color='red', linestyle=':', alpha=.4)
+        nearest = find_nearest_city(event.lon, event.lat) if geography_mode == 'full' else None
+        location = f"{nearest[0]} ({nearest[3]:.0f}km)" if nearest else f"{event.lat:.2f}N {event.lon:.2f}E"
+        table_data.append([f"{event.time:%Y-%m-%d %H:%MZ}", "Approx. landfall", "—",
+                           f"{event.wind_kt*1.852:.0f} km/h", location])
+        table_colors.append(['red']*5)
+    if landfall_events:
+        pairs = sorted(zip(table_data, table_colors), key=lambda pair: pair[0][0])
+        table_data, table_colors = map(list, zip(*pairs))
+
+    figure_height = max(8, 6 + len(table_data)*.25)
+    fig.set_size_inches(12, figure_height)
+    gs.set_height_ratios([3, max(1.2, len(table_data)*.17)])
+    fig.subplots_adjust(top=.86, bottom=.14, left=.08, right=.97, hspace=.85)
     table = ax2.table(
         cellText=table_data,
         colLabels=['Time (UTC)', 'Event', 'Category', 'Intensity', 'Location'],
@@ -225,44 +213,16 @@ def plot_storm_prognostic(forecast_points, storm_name="STORM", issue_time=None):
             cell.set_height(0.12)
             cell.set_edgecolor('#3f3f3f')
 
-    plt.suptitle(f"{storm_name} Forecast Prognostic — Issued {issue_time:%Y-%m-%d %H00Z}",
+    plt.suptitle(f"{storm_name} Forecast Prognostic — Issued {issue_time:%Y-%m-%d %H:%MZ}",
                 color='white', fontsize=16, y=0.98)
     
-    import os
-    output_dir = "Prognostics"
-    os.makedirs(output_dir, exist_ok=True)
-    outfile = os.path.join(output_dir, f"{storm_name}_{issue_time:%Y%m%d%H}_prognostic.png")
-    plt.savefig(outfile, dpi=300, bbox_inches='tight', pad_inches=0.2, facecolor=fig.get_facecolor())
+    from cycloneaid.metadata import __version__
+    note = f"CycloneAid {__version__} | Landfall times are approximate coastline intersections"
+    if geography_mode == "degraded":
+        note += " | DEGRADED: cities and automatic landfall unavailable"
+    fig.text(.5, .05, note, ha='center', fontsize=7)
     return fig
 
 if __name__ == '__main__':
-    import sys
-    import os
-    from storm_tracker import ForecastPoint
-    
-    # Check if forecast file exists
-    if not os.path.exists("forecast.csv"):
-        raise FileNotFoundError("forecast.csv file not found in current directory")
-    
-    try:
-        df = pd.read_csv("forecast.csv", comment='#')
-        required_columns = ['time', 'lat', 'lon', 'wind_kt', 'category', 'landfall']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns in forecast.csv: {', '.join(missing_columns)}")
-        
-        if df.empty:
-            raise ValueError("forecast.csv contains no data")
-            
-        pts = [ForecastPoint(**r._asdict()) for r in df.itertuples(index=False)]
-        
-        # Generate prognostic graphic
-        plot_storm_prognostic(pts, storm_name=sys.argv[2] if len(sys.argv)>2 else 'TYPHOON',
-                            issue_time=pts[0].time)
-                            
-    except pd.errors.EmptyDataError:
-        print("Error: forecast.csv is empty")
-    except pd.errors.ParserError:
-        print("Error: forecast.csv is not properly formatted")
-    except Exception as e:
-        print(f"Error processing forecast data: {str(e)}")
+    from cycloneaid.cli import prognostic_main
+    raise SystemExit(prognostic_main())

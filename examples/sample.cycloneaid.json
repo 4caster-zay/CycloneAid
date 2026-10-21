@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "app_version": "0.10.0a1",
+  "session": {
+    "rows": [
+      {
+        "values": [
+          "2026-10-21T00:00:00+00:00",
+          "0",
+          "7.3",
+          "135.5",
+          "30",
+          "False",
+          "Tropical",
+          "TD",
+          "False"
+        ],
+        "row_id": "palau-000",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-21T06:00:00+00:00",
+          "0",
+          "7.5",
+          "134.8",
+          "30",
+          "False",
+          "Tropical",
+          "TD",
+          "False"
+        ],
+        "row_id": "palau-001",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-21T12:00:00+00:00",
+          "0",
+          "7.8",
+          "134.10000000000002",
+          "35",
+          "False",
+          "Tropical",
+          "TS",
+          "False"
+        ],
+        "row_id": "palau-002",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-21T18:00:00+00:00",
+          "0",
+          "8.1",
+          "133.39999999999998",
+          "40",
+          "False",
+          "Tropical",
+          "TS",
+          "False"
+        ],
+        "row_id": "palau-003",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-22T00:00:00+00:00",
+          "0",
+          "8.4",
+          "132.7",
+          "45",
+          "False",
+          "Tropical",
+          "TS",
+          "False"
+        ],
+        "row_id": "palau-004",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-22T12:00:00+00:00",
+          "0",
+          "9.0",
+          "131.39999999999998",
+          "60",
+          "False",
+          "Tropical",
+          "STS",
+          "False"
+        ],
+        "row_id": "palau-005",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-23T00:00:00+00:00",
+          "0",
+          "9.7",
+          "130.10000000000002",
+          "80",
+          "False",
+          "Tropical",
+          "C1",
+          "False"
+        ],
+        "row_id": "palau-006",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-23T12:00:00+00:00",
+          "0",
+          "10.4",
+          "128.7",
+          "90",
+          "False",
+          "Tropical",
+          "C2",
+          "False"
+        ],
+        "row_id": "palau-007",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-24T00:00:00+00:00",
+          "0",
+          "11.1",
+          "127.30000000000001",
+          "90",
+          "False",
+          "Tropical",
+          "C2",
+          "False"
+        ],
+        "row_id": "palau-008",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-24T12:00:00+00:00",
+          "0",
+          "11.6",
+          "125.69999999999999",
+          "80",
+          "False",
+          "Tropical",
+          "C1",
+          "False"
+        ],
+        "row_id": "palau-009",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-25T00:00:00+00:00",
+          "0",
+          "12.0",
+          "123.80000000000001",
+          "60",
+          "False",
+          "Tropical",
+          "STS",
+          "False"
+        ],
+        "row_id": "palau-010",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-25T12:00:00+00:00",
+          "0",
+          "12.4",
+          "121.89999999999998",
+          "50",
+          "False",
+          "Tropical",
+          "STS",
+          "False"
+        ],
+        "row_id": "palau-011",
+        "override_reason": "",
+        "time_origin": "provided"
+      },
+      {
+        "values": [
+          "2026-10-26T00:00:00+00:00",
+          "0",
+          "12.8",
+          "120.0",
+          "55",
+          "False",
+          "Tropical",
+          "STS",
+          "False"
+        ],
+        "row_id": "palau-012",
+        "override_reason": "",
+        "time_origin": "provided"
+      }
+    ],
+    "settings": {
+      "storm_name": "TEST PALAU",
+      "confidence": "Moderate",
+      "preset": "Forecaster",
+      "issue_time": "2026-10-21T00:00:00Z",
+      "source": "Synthetic CycloneAid test scenario; not an official advisory",
+      "wind_averaging_period": "1-minute (synthetic scenario assumption)",
+      "geography_mode": "degraded",
+      "import_notes": "Invented 120-hour track and winds for software testing only. Origin east of Palau; west-northwest motion toward the Philippines. Offshore strengthening to 90 kt, island-crossing weakening, then modest recovery over water. All rows are supplied synthetic forecast values, not observations or interpolated rows. Manual landfall flags intentionally unset; full-geography mode derives approximate crossings. Legacy uncertainty envelope is uncalibrated. Degraded geography is selected for a first run without map downloads.",
+      "landmask_qc": false
+    },
+    "revision": 0
+  }
+}

@@ -6,7 +6,7 @@ Plotting functions consume RenderContext, not preset names.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 # Named layers used by track plotting. Each layer is toggleable via RenderContext.
@@ -167,7 +167,7 @@ class ExportPreset:
         forecaster_confidence = storm_data.get("forecaster_confidence", "Moderate")
 
         if rules.get("include_generation_time", True):
-            lines.append(f"Generated: {datetime.utcnow():%Y-%m-%d %H%MZ} UTC")
+            lines.append(f"Generated: {datetime.now(timezone.utc):%Y-%m-%d %H%MZ} UTC")
 
         if rules.get("include_forecast_disclaimer", False):
             lines.append("Forecast track subject to change.")
@@ -176,17 +176,13 @@ class ExportPreset:
             lines.append(f"Forecaster Confidence: {forecaster_confidence}")
 
         if rules.get("include_version", True):
-            try:
-                import storm_tracker_gui
-                version = storm_tracker_gui.VERSION
-            except (ImportError, AttributeError):
-                version = "Alpha 0.8.0"
+            from cycloneaid.metadata import __version__ as version
             lines.append(f"CycloneAid {version}")
 
         if rules.get("include_valid_range", True) and issue_time is not None and valid_until is not None:
             try:
-                issue_str = issue_time.strftime("%Y-%m-%d %H00Z")
-                valid_str = valid_until.strftime("%Y-%m-%d %H00Z")
+                issue_str = issue_time.strftime("%Y-%m-%d %H:%MZ")
+                valid_str = valid_until.strftime("%Y-%m-%d %H:%MZ")
                 lines.append(f"Valid: {issue_str} to {valid_str}")
             except Exception:
                 pass

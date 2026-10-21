@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=78"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cycloneaid"
+dynamic = ["version"]
+description = "Experimental regional cyclone forecast graphics desktop application"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+authors = [{name = "Forecaster Zayed"}]
+dependencies = [
+  "pandas>=3.0,<4", "numpy>=2.0,<3", "matplotlib>=3.9,<4",
+  "cartopy>=0.24,<0.27", "shapely>=2.0,<3", "pyproj>=3.7,<4",
+  "rtree>=1.3,<2", "Pillow>=11,<14",
+]
+
+[project.optional-dependencies]
+desktop = ["tkintermapview>=1.29,<2", "global-land-mask>=1.0,<2"]
+
+[project.scripts]
+cycloneaid = "cycloneaid.cli:gui_main"
+cycloneaid-track = "cycloneaid.cli:track_main"
+cycloneaid-prognostic = "cycloneaid.cli:prognostic_main"
+cycloneaid-ri = "cycloneaid.cli:ri_main"
+
+[tool.setuptools]
+packages = ["cycloneaid"]
+py-modules = ["storm_tracker", "storm_tracker_gui", "storm_prognostic", "storm_RI_plot", "validation", "export_preset"]
+
+[tool.setuptools.dynamic]
+version = {attr = "cycloneaid.metadata.__version__"}
+
+[dependency-groups]
+dev = ["ruff>=0.12,<1"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82", "F401"]

@@ -1,8 +1,20 @@
+# TEST PALAU: synthetic software-testing scenario; not an advisory or observed storm.
+# Nominal issue: 2026-10-21T00:00:00Z. Valid through T+120h.
+# Winds: maximum sustained wind in knots; 1-minute averaging is an explicit scenario assumption.
+# Positions and winds are invented forecast values, not model guidance or agency data.
+# Use examples/sample.cycloneaid.json to preserve TEST labeling and source metadata in graphics.
+# Manual landfall flags are unset; full-geography charts derive approximate coastline crossings.
 time,lat,lon,wind_kt,landfall,storm_type,intensity_class,is_interpolated
-2026-02-05 11:00,7.993957436359008,127.46337890625,145,False,Tropical,C5,False
-2026-02-05 17:00,8.124491290861204,126.485595703125,140,True,Tropical,C5,False
-2026-02-05 23:00,8.52670061045018,124.91455078125,120,False,Tropical,C4,False
-2026-02-06 05:00,9.335251810983614,123.33251953125,110,True,Tropical,C3,False
-2026-02-06 11:00,9.876863789864302,122.420654296875,90,False,Tropical,C2,False
-2026-02-06 23:00,10.725381285457912,121.46484375,70,False,Tropical,C1,False
-2026-02-07 11:00,11.30770770776545,119.8828125,75,False,Tropical,C1,False
+2026-10-21T00:00:00Z,7.3,135.5,30,False,Tropical,TD,False
+2026-10-21T06:00:00Z,7.5,134.8,30,False,Tropical,TD,False
+2026-10-21T12:00:00Z,7.8,134.1,35,False,Tropical,TS,False
+2026-10-21T18:00:00Z,8.1,133.4,40,False,Tropical,TS,False
+2026-10-22T00:00:00Z,8.4,132.7,45,False,Tropical,TS,False
+2026-10-22T12:00:00Z,9.0,131.4,60,False,Tropical,STS,False
+2026-10-23T00:00:00Z,9.7,130.1,80,False,Tropical,C1,False
+2026-10-23T12:00:00Z,10.4,128.7,90,False,Tropical,C2,False
+2026-10-24T00:00:00Z,11.1,127.3,90,False,Tropical,C2,False
+2026-10-24T12:00:00Z,11.6,125.7,80,False,Tropical,C1,False
+2026-10-25T00:00:00Z,12.0,123.8,60,False,Tropical,STS,False
+2026-10-25T12:00:00Z,12.4,121.9,50,False,Tropical,STS,False
+2026-10-26T00:00:00Z,12.8,120.0,55,False,Tropical,STS,False

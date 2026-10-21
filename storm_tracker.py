@@ -2,22 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-import cartopy.io.shapereader as shpreader
-from cartopy.feature import NaturalEarthFeature
-from shapely.geometry import Point, box
-from shapely.ops import unary_union
+from shapely.geometry import Point
 from matplotlib.patches import Patch
-from matplotlib.transforms import Affine2D, offset_copy, blended_transform_factory, ScaledTranslation
-import sys
-import os
-from math import radians, sin, cos, sqrt, atan2, degrees
-from scipy.interpolate import interp1d
-import numpy as np
-from rtree import index
-from functools import lru_cache
 from datetime import datetime, timezone, timedelta
-import matplotlib.dates as mdates
-import xml.etree.ElementTree as ET
 
 # Export preset: optional; if not provided, Forecaster preset is used
 try:
@@ -39,11 +26,9 @@ except ImportError:
     LAYER_CITY_LABELS = LAYER_LANDFALL_MARKERS = LAYER_LEAD_TIME_ANNOTATIONS = None
     LAYER_VALIDATION_WARNINGS = LAYER_METADATA_FOOTER = FORECASTER_PRESET = None
 
-# ─── Error Radii Tables (km) ───
-error_moderate = {0:20,12:40,24:80,36:115,48:150,60:175,72:200,96:300,120:400}
-error_high     = {t:r*0.8 for t,r in error_moderate.items()}
-error_low      = {t:r*1.3 for t,r in error_moderate.items()}
-error_tables   = {'Low':error_low, 'Moderate':error_moderate, 'High':error_high}
+from cycloneaid.cone import ERROR_TABLES as error_tables
+error_high = error_tables['High']
+error_low = error_tables['Low']
 
 # ─── Confidence Colors & Alpha ───
 confidence_colors = {
@@ -69,351 +54,28 @@ category_colors = {
     'SS':  '#007d7a',  # Darker cyan for subtropical storm
 }
 
-class ForecastPoint:
-    """Represents a single point in the storm forecast track.
-    
-    Attributes:
-        time (datetime): Time of the forecast point
-        lat (float): Latitude in degrees
-        lon (float): Longitude in degrees
-        wind_kt (int): Wind speed in knots
-        intensity_class (str): Intensity classification (TD, TS, STS, C1-C5)
-        storm_type (str): Storm structure/type (Tropical, Subtropical, Extratropical, Low)
-        landfall (bool): Whether this point represents landfall
-        is_interpolated (bool): Whether this point was interpolated from GPX data
-    """
-    def __init__(self, time, lat, lon, wind_kt, intensity_class=None, storm_type=None, 
-                 landfall=False, is_interpolated=False, category=None):
-        self.time     = pd.to_datetime(time)
-        self.lat      = float(lat)
-        self.lon      = float(lon)
-        self.wind_kt  = int(wind_kt)
-        self.landfall = bool(landfall) if isinstance(landfall, bool) else str(landfall).lower()=='true'
-        self.is_interpolated = bool(is_interpolated)
-        
-        # Backward compatibility: if category is provided, parse it
-        if category is not None:
-            intensity_class, storm_type = self._parse_category(category)
-        
-        # Set defaults if not provided
-        if intensity_class is None:
-            intensity_class = self._derive_intensity_class(wind_kt)
-        if storm_type is None:
-            storm_type = "Tropical"
-        
-        self.intensity_class = intensity_class
-        self.storm_type = storm_type
-    
-    def _parse_category(self, category):
-        """Parse legacy category into intensity_class and storm_type."""
-        # Map legacy categories to new structure
-        if category in ['L']:
-            return 'TD', 'Low'
-        elif category in ['EX']:
-            # Need wind to determine intensity
-            return self._derive_intensity_class(self.wind_kt), 'Extratropical'
-        elif category in ['SD']:
-            return 'TD', 'Subtropical'
-        elif category in ['SS']:
-            return 'TS' if self.wind_kt >= 34 else 'TD', 'Subtropical'
-        else:
-            # Regular intensity classes (TD, TS, STS, C1-C5)
-            return category, 'Tropical'
-    
-    def _derive_intensity_class(self, wind_kt):
-        """Derive intensity class from wind speed."""
-        thresholds = [
-            (137, 'C5'), (113, 'C4'), (96, 'C3'), (83, 'C2'), 
-            (64, 'C1'), (48, 'STS'), (34, 'TS'), (0, 'TD')
-        ]
-        for threshold, label in thresholds:
-            if wind_kt >= threshold:
-                return label
-        return 'TD'
-    
-    @property
-    def category(self):
-        """Legacy property for backward compatibility."""
-        # Return composite label
-        if self.storm_type == 'Low':
-            return 'L'
-        elif self.storm_type == 'Extratropical':
-            return 'EX'
-        elif self.storm_type == 'Subtropical':
-            return 'SS' if self.intensity_class in ['TS', 'STS', 'C1', 'C2', 'C3', 'C4', 'C5'] else 'SD'
-        else:
-            return self.intensity_class
+# Public aliases preserve existing imports while sharing one domain/geography service.
+from cycloneaid.model import ForecastPoint as ForecastPoint, utc_timestamp
+from cycloneaid.metadata import __version__ as VERSION, CONE_METHOD
+from cycloneaid.cone import create_optimized_buffers
+from cycloneaid.geography import (
+    get_ph_provinces as _get_ph_provinces,
+    find_nearest_city, cities_in_cone,
+)
 
 
-def read_gpx_to_dataframe(gpx_path):
-    """
-    Read a GPX file and convert track points to a DataFrame compatible
-    with the existing forecast CSV format.
+def read_gpx_to_dataframe(gpx_path, **timing):
+    from cycloneaid.imports import read_forecast
+    from dataclasses import asdict
+    points, _ = read_forecast(gpx_path, **timing)
+    return pd.DataFrame([asdict(point) for point in points])
 
-    The resulting DataFrame has columns:
-        ['time', 'lat', 'lon', 'wind_kt', 'intensity_class', 'storm_type', 
-         'landfall', 'is_interpolated']
-
-    - time: taken from GPX <time> element when available, otherwise
-            generated as hourly intervals from the current UTC time.
-    - wind_kt: default 0 (user can edit later in CSV if desired).
-    - intensity_class: default 'TD' (derived from wind_kt=0).
-    - storm_type: default 'Low' for GPX imports.
-    - landfall: default False.
-    - is_interpolated: True if timestamps were missing and generated.
-    """
-    if not os.path.exists(gpx_path):
-        raise FileNotFoundError(f"GPX file not found: {gpx_path}")
-
-    tree = ET.parse(gpx_path)
-    root = tree.getroot()
-
-    # Detect namespace (e.g. '{http://www.topografix.com/GPX/1/1}gpx')
-    if '}' in root.tag:
-        ns_uri = root.tag.split('}')[0].strip('{')
-        ns = {'gpx': ns_uri}
-        trkpt_xpath = './/gpx:trkpt'
-        rtept_xpath = './/gpx:rtept'
-        wpt_xpath = './/gpx:wpt'
-        time_tag = 'gpx:time'
-    else:
-        ns = {}
-        trkpt_xpath = './/trkpt'
-        rtept_xpath = './/rtept'
-        wpt_xpath = './/wpt'
-        time_tag = 'time'
-
-    points = []
-
-    # Support both track points (<trkpt>) and route points (<rtept>),
-    # and fall back to waypoints (<wpt>) if necessary. This covers
-    # exports from tools like Windy.com that use <rtept>.
-    trkpts = list(root.findall(trkpt_xpath, ns))
-    if not trkpts:
-        trkpts = list(root.findall(rtept_xpath, ns))
-    if not trkpts:
-        trkpts = list(root.findall(wpt_xpath, ns))
-
-    if not trkpts:
-        raise ValueError(
-            f"No usable points (<trkpt>, <rtept>, or <wpt>) found in GPX file: {gpx_path}"
-        )
-
-    # Check if any timestamps are missing
-    has_timestamps = False
-    for trkpt in trkpts:
-        time_elem = trkpt.find(time_tag, ns)
-        if time_elem is not None and time_elem.text:
-            has_timestamps = True
-            break
-    
-    # If no times are provided, create a simple hourly sequence from now
-    base_time = pd.Timestamp.utcnow().floor('H')
-    is_interpolated = not has_timestamps
-
-    for i, trkpt in enumerate(trkpts):
-        lat = float(trkpt.attrib.get('lat'))
-        lon = float(trkpt.attrib.get('lon'))
-
-        time_elem = trkpt.find(time_tag, ns)
-        if time_elem is not None and time_elem.text:
-            time_val = pd.to_datetime(time_elem.text)
-            point_interpolated = False
-        else:
-            time_val = base_time + pd.Timedelta(hours=i)
-            point_interpolated = True
-
-        points.append(
-            {
-                'time': time_val,
-                'lat': lat,
-                'lon': lon,
-                'wind_kt': 0,
-                'intensity_class': 'TD',  # Default for 0 wind
-                'storm_type': 'Low',  # Default for GPX imports
-                'landfall': False,
-                'is_interpolated': point_interpolated,
-            }
-        )
-
-    df = pd.DataFrame(points)
-    if df.empty:
-        raise ValueError(f"GPX file produced no valid points: {gpx_path}")
-    return df
-
-# ─── Global Caches for Geography ───
-_CITY_CACHE = None
-_CITY_INDEX = None
-_PROVINCE_CACHE = None
-
-def _get_city_data():
-    """Load and index populated places data (singleton)."""
-    global _CITY_CACHE, _CITY_INDEX
-    if _CITY_CACHE is not None:
-        return _CITY_CACHE, _CITY_INDEX
-
-    pop_shp = shpreader.natural_earth(resolution='10m', category='cultural', name='populated_places')
-    _CITY_CACHE = []
-    _CITY_INDEX = index.Index()
-    
-    reader = shpreader.Reader(pop_shp)
-    for i, rec in enumerate(reader.records()):
-        lon, lat = rec.geometry.x, rec.geometry.y
-        name = rec.attributes['NAME']
-        population = rec.attributes.get('POP_MAX', 0)
-        is_capital = (
-            rec.attributes.get('FEATURECLA', '').lower() in ['admin-0 capital', 'admin-1 capital', 'admin-1 region capital'] or
-            rec.attributes.get('CAPITAL', '').lower() in ['admin-1 capital', 'yes', 'primary'] or
-            rec.attributes.get('ADM1CAP', 0) == 1
-        )
-        entry = (lon, lat, name, population, is_capital)
-        _CITY_CACHE.append(entry)
-        _CITY_INDEX.insert(i, (lon, lat, lon, lat))
-    
-    return _CITY_CACHE, _CITY_INDEX
-
-def _get_ph_provinces():
-    """Load Philippine province boundaries (singleton)."""
-    global _PROVINCE_CACHE
-    if _PROVINCE_CACHE is not None:
-        return _PROVINCE_CACHE
-    
-    admin1_shp = shpreader.natural_earth(resolution='10m', category='cultural', name='admin_1_states_provinces_lines')
-    _PROVINCE_CACHE = []
-    reader = shpreader.Reader(admin1_shp)
-    for rec in reader.records():
-        if rec.attributes.get('admin', rec.attributes.get('adm0_name')) == 'Philippines':
-            _PROVINCE_CACHE.append(rec.geometry)
-    return _PROVINCE_CACHE
-
-def find_nearest_city(point_lon, point_lat, cities_data=None, max_distance_km=250):
-    """Find the nearest city using spatial index for performance."""
-    if cities_data is None:
-        cities_data, city_idx = _get_city_data()
-    else:
-        # Fallback for manual data: search all
-        city_idx = None
-
-    def haversine(lon1, lat1, lon2, lat2):
-        R = 6371
-        phi1, phi2 = radians(lat1), radians(lat2)
-        dphi, dlambda = radians(lat2-lat1), radians(lon2-lon1)
-        a = sin(dphi/2)**2 + cos(phi1)*cos(phi2)*sin(dlambda/2)**2
-        return R * 2 * atan2(sqrt(a), sqrt(1-a))
-
-    # Spatial search if index available
-    if city_idx:
-        # Search roughly within double the max_distance in degrees (safe bound)
-        buf = max_distance_km / 111.0
-        candidates = list(_CITY_INDEX.intersection((point_lon - buf, point_lat - buf, point_lon + buf, point_lat + buf)))
-        found_cities = [cities_data[i] for i in candidates]
-    else:
-        found_cities = cities_data
-
-    nearest_city = None
-    min_dist = float('inf')
-    for clon, clat, name, pop, is_cap in found_cities:
-        dist = haversine(point_lon, point_lat, clon, clat)
-        if dist <= max_distance_km and dist < min_dist:
-            min_dist = dist
-            nearest_city = (name, clon, clat, dist)
-    return nearest_city
-
-@lru_cache(maxsize=256)
-def calculate_buffer_size(lat, radius_km):
-    """Calculate buffer size with latitude correction (cached)."""
-    return (radius_km / 111.0 + radius_km / (111.0 * cos(radians(lat)))) / 2
-
-def create_optimized_buffers(forecast_points, table, issue_time, track_times):
-    """Create optimized buffer generation with reduced computational overhead"""
-    buffers = []
-    table_hours = sorted(table.keys())
-    
-    # Pre-calculate track data as numpy arrays for faster operations
-    track_data = np.array([(pt.lon, pt.lat) for pt in forecast_points])
-    track_hours = np.array([(pt.time - issue_time).total_seconds()/3600 for pt in forecast_points])
-    
-    # Create interpolation functions with numpy arrays
-    lon_interp = interp1d(track_hours, track_data[:, 0], kind='linear',
-                         bounds_error=False, fill_value=(track_data[0, 0], track_data[-1, 0]))
-    lat_interp = interp1d(track_hours, track_data[:, 1], kind='linear',
-                         bounds_error=False, fill_value=(track_data[0, 1], track_data[-1, 1]))
-    
-    # Process forecast points with optimized buffer creation
-    for pt, hour in zip(forecast_points, track_hours):
-        # Get radius efficiently
-        if hour <= 0:
-            radius_km = table[0]
-        elif hour >= max(table_hours):
-            radius_km = table[max(table_hours)]
-        elif hour in table:
-            radius_km = table[hour]
-        else:
-            nearest_hour = min(table_hours, key=lambda x: abs(x - hour))
-            radius_km = table[nearest_hour]
-        
-        # Use cached buffer size calculation with increased segments for smoother edges
-        buffer_size = calculate_buffer_size(pt.lat, radius_km)
-        
-        # Create main buffer with increased segments for smoother edges
-        buffer = Point(pt.lon, pt.lat).buffer(buffer_size, quad_segs=96)  # Increased from 64 to 96
-        buffers.append(buffer)
-        
-        # Optimize early forecast points buffer creation
-        if 0 <= hour <= 24:
-            # Create additional buffers with increased segments
-            for factor in [0.95, 1.05]:  # Reduced from 4 to 2 factors
-                extra_buffer = Point(pt.lon, pt.lat).buffer(buffer_size * factor, quad_segs=48)  # Increased from 32 to 48
-                buffers.append(extra_buffer)
-    
-    # Optimize interpolated points
-    # Use more points for smoother interpolation
-    hours = np.concatenate([
-        np.linspace(0, 24, 96),     # Increased from 48 to 96 points
-        np.linspace(24, max(track_times), 48)[1:]  # Increased from 24 to 48 points
-    ])
-    
-    # Vectorize interpolation for better performance
-    interp_lons = np.clip(lon_interp(hours), None, 150)
-    interp_lats = np.clip(lat_interp(hours), 0, 40)
-    
-    # Process interpolated points efficiently
-    for lon, lat, hour in zip(interp_lons, interp_lats, hours):
-        # Efficient radius calculation
-        if hour <= 0:
-            radius_km = table[0]
-        elif hour >= max(table_hours):
-            radius_km = table[max(table_hours)]
-        else:
-            prev_hour = max([h for h in table_hours if h <= hour])
-            next_hour = min([h for h in table_hours if h >= hour])
-            if prev_hour == next_hour:
-                radius_km = table[prev_hour]
-            else:
-                weight = (hour - prev_hour) / (next_hour - prev_hour)
-                radius_km = table[prev_hour] + weight * (table[next_hour] - table[prev_hour])
-        
-        buffer_size = calculate_buffer_size(lat, radius_km)
-        buffer = Point(lon, lat).buffer(buffer_size, quad_segs=48)  # Increased from 32 to 48
-        buffers.append(buffer)
-    
-    return unary_union(buffers)
 
 def optimize_city_processing(cities_data, cone):
-    """Pre-filter cities using spatial indexing against the uncertainty cone."""
-    cities, city_idx = _get_city_data()
-    bounds = cone.bounds
-    candidates = list(city_idx.intersection(bounds))
-    
-    # Precise filtering
-    filtered = []
-    for i in candidates:
-        lon, lat, name, pop, is_cap = cities[i]
-        if cone.contains(Point(lon, lat)):
-            filtered.append((lon, lat, name, pop, is_cap))
-    return filtered
+    return cities_in_cone(cone)
 
-def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forecaster_confidence='Moderate', render_context=None):
+
+def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forecaster_confidence='Moderate', render_context=None, *, geography_mode='full', landfall_events=()):
     """
     Plot the storm track with uncertainty cone and forecast points.
     Args:
@@ -434,12 +96,17 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
         raise ValueError("Choose forecaster confidence from: Low, Moderate, High")
     
     from validation import validate_forecast_points
-    validation_result = validate_forecast_points(forecast_points)
+    validation_result = validate_forecast_points(forecast_points, regional=True)
     
     if validation_result.has_errors():
         error_msg = "Validation errors prevent rendering:\n" + "\n".join(validation_result.hard_errors)
         raise ValueError(error_msg)
 
+    issue_time = utc_timestamp(issue_time)
+    if pd.isna(issue_time) or issue_time > forecast_points[0].time:
+        raise ValueError("Issue time must be valid and no later than the first point")
+    if (forecast_points[-1].time-issue_time).total_seconds()/3600 > 120:
+        validation_result.add_soft_warning("Heuristic envelope ends at T+120h; later track points have no envelope")
     has_interpolated = any(pt.is_interpolated for pt in forecast_points)
     valid_until = forecast_points[-1].time if forecast_points else None
 
@@ -468,11 +135,13 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
     table = error_tables[forecaster_confidence]
     cone = create_optimized_buffers(forecast_points, table, issue_time, track_times)
     
-    # Get coordinates for plotting
-    xs, ys = cone.exterior.xy
     
     # Calculate map extent with padding and 4:3 aspect ratio
-    bounds = cone.bounds  # (min_lon, min_lat, max_lon, max_lat)
+    cone_bounds = cone.bounds
+    bounds = (min(cone_bounds[0], *(p.lon for p in forecast_points)),
+              min(cone_bounds[1], *(p.lat for p in forecast_points)),
+              max(cone_bounds[2], *(p.lon for p in forecast_points)),
+              max(cone_bounds[3], *(p.lat for p in forecast_points)))
     
     # Add padding (20% of the range)
     lon_range = bounds[2] - bounds[0]
@@ -503,38 +172,21 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
         min_lat -= extra_height
         max_lat += extra_height
     
-    # Ensure we don't exceed reasonable bounds for the region
-    min_lon = max(100, min_lon)  # Don't go west of 100°E
-    max_lon = min(150, max_lon)  # Don't go east of 150°E
-    min_lat = max(0, min_lat)    # Don't go south of equator
-    max_lat = min(40, max_lat)   # Don't go north of 40°N
-    
     # Set the map extent
     ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
 
-    # land/ocean in dark mode
-    ax.add_feature(cfeature.LAND.with_scale('50m'), facecolor='#2f2f2f')
-    ax.add_feature(cfeature.OCEAN.with_scale('50m'), facecolor='#0d0d2b')
-    ax.add_feature(cfeature.BORDERS, edgecolor='white', linestyle=':')
-    ax.coastlines(color='white')
-    
-    # Add gridlines with adaptive spacing based on map size
-    lon_range = max_lon - min_lon
-    grid_spacing = max(1, round(lon_range / 8))  # Aim for about 8 gridlines across
-    
-    gl = ax.gridlines(draw_labels=True, color='gray', alpha=0.3)
-    gl.xlocator = plt.MultipleLocator(grid_spacing)
-    gl.ylocator = plt.MultipleLocator(grid_spacing)
+    if geography_mode == 'full':
+        ax.add_feature(cfeature.LAND.with_scale('10m'), facecolor='#2f2f2f')
+        ax.add_feature(cfeature.BORDERS.with_scale('50m'), edgecolor='white', linestyle=':')
+        ax.coastlines(resolution='10m', color='white')
+        for geom in _get_ph_provinces():
+            ax.add_geometries([geom], crs=ccrs.PlateCarree(), facecolor='none',
+                              edgecolor='#FFD700', linewidth=.8, alpha=.3, zorder=2)
+    ax.set_facecolor('#0d0d2b')
+    gl = ax.gridlines(draw_labels=True, alpha=.3, linestyle='--')
     gl.top_labels = False
     gl.right_labels = False
-
-    # Geography data (using optimized singleton caches)
-    ph_provinces = _get_ph_provinces()
-    for geom in ph_provinces:
-        ax.add_geometries([geom], crs=ccrs.PlateCarree(), facecolor='none',
-                          edgecolor='#FFD700', linewidth=0.8, alpha=0.3, zorder=2)
-
-    cities_data, _ = _get_city_data()
+    cities_data = optimize_city_processing(None, cone) if geography_mode == 'full' else []
 
     # Layer: city_labels
     show_cities = render_context is None or (LAYER_CITY_LABELS is not None and render_context.is_layer_visible(LAYER_CITY_LABELS))
@@ -584,35 +236,11 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
     if show_track_line:
         lons = [pt.lon for pt in forecast_points]
         lats = [pt.lat for pt in forecast_points]
-        interpolated_segments = []
-        regular_segments = []
-        current_seg = []
-        is_current_interpolated = False
-        for i, pt in enumerate(forecast_points):
-            if i == 0:
-                is_current_interpolated = pt.is_interpolated
-                current_seg = [(pt.lon, pt.lat)]
-            elif pt.is_interpolated != is_current_interpolated:
-                if is_current_interpolated:
-                    interpolated_segments.append(current_seg)
-                else:
-                    regular_segments.append(current_seg)
-                is_current_interpolated = pt.is_interpolated
-                current_seg = [(pt.lon, pt.lat)]
-            else:
-                current_seg.append((pt.lon, pt.lat))
-        if is_current_interpolated:
-            interpolated_segments.append(current_seg)
-        else:
-            regular_segments.append(current_seg)
-        for seg in regular_segments:
-            if len(seg) > 1:
-                seg_lons, seg_lats = zip(*seg)
-                ax.plot(seg_lons, seg_lats, '--', color='white', linewidth=2.0, zorder=6, alpha=line_opacity)
-        for seg in interpolated_segments:
-            if len(seg) > 1:
-                seg_lons, seg_lats = zip(*seg)
-                ax.plot(seg_lons, seg_lats, '--', color='white', linewidth=2.0, zorder=6, alpha=interp_opacity, dashes=(5, 5))
+        for start, end in zip(forecast_points, forecast_points[1:]):
+            estimated = start.is_interpolated or end.is_interpolated
+            ax.plot([start.lon, end.lon], [start.lat, end.lat], '--' if estimated else '-',
+                    color='white', linewidth=2, zorder=6,
+                    alpha=interp_opacity if estimated else line_opacity)
 
     # Layer: track_points
     show_track_points = render_context is None or (LAYER_TRACK_POINTS is not None and render_context.is_layer_visible(LAYER_TRACK_POINTS))
@@ -636,112 +264,37 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
     cone_opacity_mult = render_context.cone_opacity if render_context else 1.0
     if show_cone:
         cone_color, cone_alpha = cone_colors[forecaster_confidence]
-        for i in range(3):
-            alpha_mult = (1 - (i * 0.2)) * cone_opacity_mult
-            ax.fill(xs, ys, color=cone_color, alpha=cone_alpha * alpha_mult, transform=ccrs.PlateCarree(), zorder=5)
-        ax.plot(xs, ys, '-', color=cone_color, linewidth=1.5, transform=ccrs.PlateCarree(), alpha=0.7 * cone_opacity_mult, zorder=5)
+        ax.add_geometries([cone], crs=ccrs.PlateCarree(), facecolor=cone_color,
+                          edgecolor=cone_color, alpha=cone_alpha*cone_opacity_mult,
+                          linewidth=1.5, zorder=5)
 
     # Layer: lead_time_annotations
     show_lead_time = (render_context is None or (LAYER_LEAD_TIME_ANNOTATIONS is not None and render_context.is_layer_visible(LAYER_LEAD_TIME_ANNOTATIONS))) and (render_context is None or getattr(render_context, 'show_lead_time_annotations', True))
-    show_error_radii = render_context is None or getattr(render_context, 'show_error_radii_labels', True)
-
     if show_lead_time:
-        standard_leadtimes = [0, 12, 24, 36, 48, 72, 96, 120]
-        for i, leadtime in enumerate(standard_leadtimes):
+        annotated_points = set()
+        for i, leadtime in enumerate((0, 12, 24, 36, 48, 72, 96, 120)):
             target_time = issue_time + timedelta(hours=leadtime)
-            closest_pt = min(forecast_points, 
-                            key=lambda pt: abs((pt.time - target_time).total_seconds()))
-            actual_leadtime = int((closest_pt.time - issue_time).total_seconds() / 3600)
-            if actual_leadtime <= 0:
-                error_radius = table[0]
-            elif actual_leadtime >= max(table.keys()):
-                error_radius = table[max(table.keys())]
-            else:
-                nearest_hour = min(table.keys(), key=lambda x: abs(x - actual_leadtime))
-                error_radius = table[nearest_hour]
-            lat_deg = error_radius/111.0
-            lon_deg = error_radius/(111.0 * cos(radians(closest_pt.lat)))
-            offset_deg = (lat_deg + lon_deg) / 2
-            box_color = 'white'
-            text_color = 'white'
-            font_weight = 'normal'
-            box_alpha = 0.7
-            box_linewidth = 0.5
-            scale_factor = 1.5
-            if actual_leadtime == 0:
-                first_pt = forecast_points[0]
-                second_pt = forecast_points[1]
-                dx = second_pt.lon - first_pt.lon
-                dy = second_pt.lat - first_pt.lat
-                length = sqrt(dx*dx + dy*dy)
-                if length > 0:
-                    dx, dy = -dx/length, -dy/length
-                else:
-                    dx, dy = -1, 0
-                scale_factor = 8.0
-                box_color = '#FFD700'
-                text_color = '#FFD700'
-                font_weight = 'bold'
-                box_alpha = 0.9
-                box_linewidth = 1.0
-                offset_lon = dx * offset_deg * scale_factor
-                offset_lat = dy * offset_deg * scale_factor
-            elif actual_leadtime == 12:
-                prev_pt = forecast_points[0]
-                dx = closest_pt.lon - prev_pt.lon
-                dy = closest_pt.lat - prev_pt.lat
-                length = sqrt(dx*dx + dy*dy)
-                if length > 0:
-                    dx, dy = dx/length, dy/length
-                    perp_dx, perp_dy = -dy, dx
-                else:
-                    perp_dx, perp_dy = 1, 0
-                side_multiplier = 1 if i % 2 == 0 else -1
-                scale_factor = 3.2
-                offset_lon = perp_dx * offset_deg * side_multiplier * scale_factor
-                offset_lat = perp_dy * offset_deg * side_multiplier * scale_factor
-            else:
-                if i > 0:
-                    prev_pt = forecast_points[forecast_points.index(closest_pt) - 1]
-                    dx = closest_pt.lon - prev_pt.lon
-                    dy = closest_pt.lat - prev_pt.lat
-                else:
-                    next_pt = forecast_points[1]
-                    dx = next_pt.lon - closest_pt.lon
-                    dy = next_pt.lat - closest_pt.lat
-                length = sqrt(dx*dx + dy*dy)
-                if length > 0:
-                    dx, dy = dx/length, dy/length
-                    perp_dx, perp_dy = -dy, dx
-                else:
-                    perp_dx, perp_dy = 1, 0
-                side_multiplier = 1 if i % 2 == 0 else -1
-                if actual_leadtime <= 36:
-                    scale_factor = 2.0
-                elif actual_leadtime == 120:
-                    scale_factor = 1.2
-                else:
-                    scale_factor = 1.5
-                offset_lon = perp_dx * offset_deg * side_multiplier * scale_factor
-                offset_lat = perp_dy * offset_deg * side_multiplier * scale_factor
-            box_lon = closest_pt.lon + offset_lon
-            box_lat = closest_pt.lat + offset_lat
-            box_point = Point(box_lon, box_lat)
-            if box_point.within(cone):
-                offset_lon *= 2
-                offset_lat *= 2
-                box_lon = closest_pt.lon + offset_lon
-                box_lat = closest_pt.lat + offset_lat
-            lbl = closest_pt.intensity_class
-            if closest_pt.storm_type != 'Tropical':
-                lbl += f" ({closest_pt.storm_type[:4]})"
-            box_text = f"T+{actual_leadtime}h\n{closest_pt.time:%m/%d %HZ}\n{lbl}"
-            ax.plot([closest_pt.lon, box_lon], [closest_pt.lat, box_lat],
-                    '--', color=box_color, alpha=0.3, linewidth=0.5, zorder=8)
-            ax.text(box_lon, box_lat, box_text, transform=ccrs.PlateCarree(),
-                   ha='center', va='center', color=text_color, fontsize=6, weight=font_weight,
-                   bbox=dict(facecolor='#2f2f2f', edgecolor=box_color, boxstyle='round,pad=0.2',
-                             alpha=box_alpha, linewidth=box_linewidth), zorder=9)
+            if target_time < forecast_points[0].time or target_time > forecast_points[-1].time:
+                continue
+            point = min(forecast_points, key=lambda p: abs((p.time-target_time).total_seconds()))
+            actual = (point.time-issue_time).total_seconds()/3600
+            if point.time in annotated_points or actual > 120:
+                continue
+            annotated_points.add(point.time)
+            label = point.intensity_class
+            if point.storm_type != 'Tropical':
+                label += f" ({point.storm_type[:4]})"
+            initial = actual == 0
+            color = '#FFD700' if initial else 'white'
+            # Keep labels near their positions, independently of uncertainty radius.
+            offset = (22, -20) if initial else (0, 42 if i % 2 else -42)
+            ax.annotate(f"T+{actual:g}h\n{point.time:%m/%d %HZ}\n{label}",
+                        (point.lon, point.lat), xytext=offset, textcoords='offset points',
+                        ha='center', va='center', color=color, fontsize=6,
+                        weight='bold' if initial else 'normal', zorder=9,
+                        bbox=dict(facecolor='#2f2f2f', edgecolor=color,
+                                  boxstyle='round,pad=0.2', alpha=.85, linewidth=.5),
+                        arrowprops=dict(arrowstyle='-', color=color, alpha=.5, linewidth=.5))
 
     show_landfall = render_context is None or (LAYER_LANDFALL_MARKERS is not None and render_context.is_layer_visible(LAYER_LANDFALL_MARKERS))
     landfalls = []
@@ -749,22 +302,24 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
         for pt in forecast_points:
             if pt.landfall:
                 ax.plot(pt.lon, pt.lat, 'x', color='red', markersize=6, markeredgewidth=2, zorder=10)
-                nearest = find_nearest_city(pt.lon, pt.lat, cities_data)
+                nearest = find_nearest_city(pt.lon, pt.lat) if geography_mode == 'full' else None
                 landfalls.append((pt.time, pt, nearest))
-        if landfalls:
-            landfalls.sort(key=lambda x: x[0])
-            lines = ["Landfalls"]
-            for t, pt, nearest in landfalls:
-                lead_hours = int((pt.time - issue_time).total_seconds() / 3600)
-                if nearest:
-                    city_name, city_lon, city_lat, distance = nearest
-                    lines.append(f"T+{lead_hours}h {t:%m/%d %HZ} — {city_name} ({distance:.0f}km)")
-                else:
-                    lines.append(f"T+{lead_hours}h {t:%m/%d %HZ} — {pt.lat:.1f}°, {pt.lon:.1f}°")
-            ax.text(0.98, 0.02, "\n".join(lines),
-                    transform=ax.transAxes, ha='right', va='bottom',
-                    fontsize=7, color='white',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor='#2f2f2f', edgecolor='red', alpha=0.8),
+        lines = []
+        for t, point, nearest in sorted(landfalls, key=lambda event: event[0]):
+            location = (f"{nearest[0]} ({nearest[3]:.0f}km)" if nearest
+                        else f"{point.lat:.1f}°N, {point.lon:.1f}°E")
+            lines.append(f"Manual {t:%m/%d %H:%MZ} — {location}")
+        for number, event in enumerate(landfall_events, 1):
+            ax.plot(event.lon, event.lat, 'X', color='red', markersize=6, zorder=10)
+            ax.annotate(f"A{number}", (event.lon, event.lat), xytext=(0, -12),
+                        textcoords='offset points', color='#ff6060', fontsize=7,
+                        ha='center', va='top', zorder=11,
+                        bbox=dict(facecolor='#0d0d2b', edgecolor='none', alpha=.8))
+            lines.append(f"A{number} {event.time:%m/%d %H:%MZ} — {event.lat:.2f}°N, {event.lon:.2f}°E")
+        if lines:
+            ax.text(.98, .02, "Coastline crossings (A: approximate; UTC)\n"+"\n".join(lines),
+                    transform=ax.transAxes, ha='right', va='bottom', fontsize=7, color='white',
+                    bbox=dict(boxstyle='round,pad=.3', facecolor='#2f2f2f', edgecolor='red', alpha=.85),
                     zorder=12)
 
     from matplotlib.lines import Line2D
@@ -805,7 +360,7 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
                 Patch(facecolor='#2f2f2f', edgecolor='#4169E1', label='Provincial Capitals')
             ]
             ax.legend(handles=city_handles, loc='right', title='Cities', facecolor='#2f2f2f', edgecolor='white',
-                     labelcolor='white', ncol=1, fontsize=7, bbox_to_anchor=(0.98, 0.45), handletextpad=0.5)
+                     labelcolor='white', ncol=1, fontsize=7, bbox_to_anchor=(0.98, 0.52), handletextpad=0.5)
 
     # Layer: metadata_footer
     show_metadata = render_context is None or (LAYER_METADATA_FOOTER is not None and render_context.is_layer_visible(LAYER_METADATA_FOOTER))
@@ -813,16 +368,11 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
         if render_context is not None and getattr(render_context, 'metadata_lines', None):
             metadata_lines = render_context.metadata_lines
         else:
-            try:
-                import storm_tracker_gui
-                version = storm_tracker_gui.VERSION
-            except (ImportError, AttributeError):
-                version = "Alpha 0.9"
             metadata_lines = [
                 f"Generated: {datetime.now(timezone.utc):%Y-%m-%d %H%MZ} UTC",
-                f"CycloneAid {version}",
+                f"CycloneAid {VERSION}",
                 f"Forecaster Confidence: {forecaster_confidence}",
-                f"Valid: {issue_time:%Y-%m-%d %H00Z} to {forecast_points[-1].time:%Y-%m-%d %H00Z}",
+                f"Valid: {issue_time:%Y-%m-%d %H:%MZ} to {forecast_points[-1].time:%Y-%m-%d %H:%MZ}",
             ]
             if has_interpolated:
                 metadata_lines.insert(1, "⚠ This track contains interpolated points from GPX data")
@@ -835,69 +385,15 @@ def plot_storm_track(forecast_points, storm_name="STORM", issue_time=None, forec
                          edgecolor='yellow' if has_warn else 'white', alpha=0.8, linewidth=1.5 if has_warn else 1.0),
                 zorder=12, va='bottom')
 
-    plt.title(f"{storm_name} Forecast Track — Issued {issue_time:%Y-%m-%d %H00Z}",
+    plt.title(f"{storm_name} Forecast Track — Issued {issue_time:%Y-%m-%d %H:%MZ}",
               color='white', fontsize=18, pad=10)  # Reduced title padding
-    output_dir = "Tracks"
-    os.makedirs(output_dir, exist_ok=True)
-    outfile = os.path.join(output_dir, f"{storm_name}_{issue_time:%Y%m%d%H}_{forecaster_confidence}.png")
-    plt.savefig(outfile, 
-                dpi=300,  # Increased DPI for better quality
-                bbox_inches='tight',  # Tight bounding box
-                pad_inches=0.2,  # Small padding around the plot
-                facecolor=fig.get_facecolor())
+    note = f"{CONE_METHOD}: heuristic envelope, not calibrated probability; coverage ≤120h"
+    if geography_mode == 'degraded':
+        note += " | DEGRADED: no basemap, cities, or automatic landfall"
+    fig.text(.5, .05, note, ha='center', fontsize=7)
     # Callers are responsible for closing the figure after use
     return fig
 
 if __name__ == '__main__':
-    def get_confidence_level():
-        """Prompt for and validate user confidence level input."""
-        while True:
-            confidence_level = input("Enter track confidence level (High, Moderate, Low): ").title().strip()
-            if confidence_level in ['High', 'Moderate', 'Low']:
-                return confidence_level
-            print("Invalid input. Please enter 'High', 'Moderate', or 'Low'.")
-
-    # Get confidence level either from command line or user input
-    confidence_level = sys.argv[1].title() if len(sys.argv)>1 else get_confidence_level()
-    if confidence_level not in ['High', 'Moderate', 'Low']:
-        raise ValueError("Confidence level must be 'High', 'Moderate', or 'Low'.")
-
-    # Validate command line arguments
-    confidence = confidence_level
-    storm = sys.argv[2] if len(sys.argv)>2 else 'TYPHOON'
-
-    # Optional third argument: input file (CSV or GPX). Default remains forecast.csv
-    input_file = sys.argv[3] if len(sys.argv) > 3 else 'forecast.csv'
-
-    # Check if input file exists
-    if not os.path.exists(input_file):
-        raise FileNotFoundError(f"Input file not found: {input_file}")
-
-    try:
-        # If GPX, convert to DataFrame compatible with existing pipeline
-        if input_file.lower().endswith('.gpx'):
-            df = read_gpx_to_dataframe(input_file)
-        else:
-            df = pd.read_csv(input_file, comment='#')
-
-        required_columns = ['time', 'lat', 'lon', 'wind_kt', 'category', 'landfall']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns in forecast.csv: {', '.join(missing_columns)}")
-        
-        if df.empty:
-            raise ValueError("forecast.csv contains no data")
-            
-        pts = [ForecastPoint(**r._asdict()) for r in df.itertuples(index=False)]
-        
-        # Only generate the track graphic here
-        plot_storm_track(pts, storm_name=storm,
-                        issue_time=pts[0].time,
-                        forecaster_confidence=confidence)
-        
-    except pd.errors.EmptyDataError:
-        print("Error: forecast.csv is empty")
-    except pd.errors.ParserError:
-        print("Error: forecast.csv is not properly formatted")
-    except Exception as e:
-        print(f"Error processing forecast data: {str(e)}")
+    from cycloneaid.cli import track_main
+    raise SystemExit(track_main())

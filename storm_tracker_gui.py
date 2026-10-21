@@ -1,53 +1,25 @@
+# Select the project environment before importing scientific/GUI dependencies.
+if __name__ == "__main__":
+    from cycloneaid.launcher import main
+    raise SystemExit(main())
+
 import matplotlib
 matplotlib.use('Agg')
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
-import pandas as pd
-import os
-import importlib.util
+from tkinter import ttk
 import sys
-import tempfile
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import time as _time
-from PIL import Image, ImageTk
 from tkinter import BooleanVar
-import threading
-import xml.etree.ElementTree as ET
 
-APP_NAME = "CycloneAid"
-VERSION = "Alpha 0.9.3"
-CREATOR = "Forecaster Zayed"
-
-# ─── Dynamic Module Imports ───
-_base_dir = os.path.dirname(os.path.abspath(__file__))
-
-def _load_module(name, filename):
-    """Load a sibling module by filename."""
-    spec = importlib.util.spec_from_file_location(name, os.path.join(_base_dir, filename))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-storm_tracker = _load_module("storm_tracker", "storm_tracker.py")
-storm_prognostic = _load_module("storm_prognostic", "storm_prognostic.py")
-storm_ri_plot = _load_module("storm_RI_plot", "storm_RI_plot.py")
-
-try:
-    from export_preset import get_preset
-except ImportError:
-    get_preset = None
-
-# ─── Optional: landmask for auto landfall ───
-try:
-    from global_land_mask import globe as _globe  # type: ignore
-    _HAS_LANDMASK = True
-except ImportError:
-    _HAS_LANDMASK = False
+from cycloneaid.metadata import APP_NAME, CREATOR, DISPLAY_VERSION as VERSION
+from cycloneaid.model import INTENSITY_THRESHOLDS
+from cycloneaid.gui_session import SessionScreenMixin
+from cycloneaid.ui_scroll import wheel_steps
 
 # ─── Optional: tkintermapview ───
 try:
-    import tkintermapview  # type: ignore
+    from cycloneaid.map_widget import ManagedMapView
     _HAS_MAP = True
 except ImportError:
     _HAS_MAP = False
@@ -205,6 +177,15 @@ INTENSITY_COLORS = {
 # ─── Changelog entries (newest first) ───
 CHANGELOG = [
     {
+        "version": VERSION,
+        "date": "2026-10-21",
+        "entries": [
+            "Shared validated sessions with atomic project files, recovery, and undo/redo.",
+            "Exact-window RI, geodesic heuristic envelopes, and approximate coastline landfall.",
+            "Isolated rendering and exports, indexed cities, and incremental map updates."
+        ],
+    },
+    {
         "version": "Alpha 0.9.3",
         "date": "2026-06-08",
         "entries": [
@@ -304,19 +285,19 @@ class HomeScreen(tk.Frame):
 
     FEATURES = [
         {"icon": "🗺️", "title": "Storm Track Plot",
-         "desc": "High-fidelity forecast track maps with\nuncertainty cones, city overlays, and\nintensity classification.",
+         "desc": "Regional forecast track graphics with\na geodesic heuristic envelope, cities,\nand intensity classification.",
          "color": "#00adb5"},
         {"icon": "📊", "title": "Prognostic Chart",
-         "desc": "Intensity timelines with auto-detected\ncategory changes, landfall events, and\ncity proximity analysis.",
+         "desc": "Intensity timelines, category changes,\napproximate coastline landfall events,\nand city proximity analysis.",
          "color": "#FF6B6B"},
         {"icon": "⚡", "title": "Rapid Intensification",
-         "desc": "dV/dt intensity change rates with WMO RI\nthreshold highlighting and peak-event\nannotation.",
+         "desc": "Exact 24-hour forecast wind changes\nwith the NHC 30-kt RI threshold and\nestimated endpoint labels.",
          "color": "#FFD700"},
         {"icon": "📋", "title": "Data Management",
-         "desc": "Excel-like row management: insert,\nduplicate, reorder, edit cells with\ndropdowns. CSV / GPX / KML import.",
+         "desc": "Project save, recovery, and undo/redo.\nCSV interchange and staged imports\nfrom CSV, GPX, KML, and KMZ.",
          "color": "#48CFAD"},
-        {"icon": "🗺️", "title": "Live Map View",
-         "desc": "Interactive slippy map with real-time\nmarker sync, right-click data entry,\nand auto landfall detection.",
+        {"icon": "🗺️", "title": "Interactive Map",
+         "desc": "OSM map with incremental marker sync\nand right-click data entry. No live\nstorm-advisory feed.",
          "color": "#FF9F43"},
         {"icon": "✅", "title": "Data Validation",
          "desc": "Automatic QC checks on coordinates,\nwind speed, time ordering, and\nintensity consistency.",
@@ -339,22 +320,37 @@ class HomeScreen(tk.Frame):
         scroll_container = tk.Frame(self, bg=DARK_BG)
         scroll_container.pack(fill=tk.BOTH, expand=True)
 
-        self._canvas = tk.Canvas(scroll_container, bg=DARK_BG, highlightthickness=0, bd=0)
+        self._canvas = tk.Canvas(scroll_container, bg=DARK_BG, highlightthickness=0, bd=0, yscrollincrement=20)
         vsb = ttk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self._content = tk.Frame(self._canvas, bg=DARK_BG)
-        self._cw_id = self._canvas.create_window((0, 0), window=self._content, anchor=tk.N)
+        self._cw_id = self._canvas.create_window((0, 0), window=self._content, anchor=tk.NW)
         self._canvas.bind("<Configure>", lambda e: self._canvas.itemconfig(self._cw_id, width=e.width))
         self._content.bind("<Configure>", lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
-        self._canvas.bind_all("<MouseWheel>", lambda e: self._canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        root = self.winfo_toplevel()
+        sequences = ['<MouseWheel>']
+        if self.tk.call('tk', 'windowingsystem') == 'x11':
+            sequences += ['<Button-4>', '<Button-5>']
+        self._wheel_bindings = [(sequence, root.bind(sequence, self._scroll, add='+'))
+                                for sequence in sequences]
 
         self._build_hero()
         self._build_story()
         self._build_feature_cards()
         self._build_changelog_toggle()
+
+    def _scroll(self, event):
+        if str(event.widget).startswith(str(self)+'.'):
+            self._canvas.yview_scroll(-3 * wheel_steps(event), 'units')
+            return 'break'
+
+    def destroy(self):
+        for sequence, identifier in self._wheel_bindings:
+            self.winfo_toplevel().unbind(sequence, identifier)
+        super().destroy()
 
     # ── Bottom bar ──
     def _build_bottom_bar(self):
@@ -392,6 +388,9 @@ class HomeScreen(tk.Frame):
         theme_btn.pack(side=tk.LEFT, padx=10)
         theme_btn.bind("<Enter>", lambda e, b=theme_btn: b.config(bg=ACCENT, fg=DARK_BG))
         theme_btn.bind("<Leave>", lambda e, b=theme_btn: b.config(bg=LIGHT_BG, fg=WHITE))
+
+        tk.Label(hero, text="Experimental regional graphics from supplied forecasts. Not for operational use.",
+                 font=("Segoe UI", 10), fg=ACCENT, bg=DARK_BG).pack(pady=(0, 8))
 
         # Launch button
         start_btn = tk.Button(
@@ -530,6 +529,7 @@ class CellEditor:
         self.col_name = col_name
         self.old_value = old_value
         self.on_save_callback = on_save_callback
+        self._saving = False
         self.editor = None
         self.frame = None
 
@@ -559,7 +559,7 @@ class CellEditor:
         cb = ttk.Combobox(self.frame, textvariable=var, values=options, state="readonly", width=10)
         cb.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         cb.focus()
-        save = lambda _=None: (self.on_save_callback(self.item, self.col_idx, var.get()) if var.get() else None, self.destroy())
+        save = lambda _=None: self._commit_value(var.get())
         cb.bind('<Return>', save)
         cb.bind('<Escape>', lambda _: self.cancel())
         cb.bind('<FocusOut>', save)
@@ -572,7 +572,7 @@ class CellEditor:
         cb = ttk.Combobox(self.frame, textvariable=var, values=options, state="readonly", width=12)
         cb.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         cb.focus()
-        save = lambda _=None: (self.on_save_callback(self.item, self.col_idx, var.get()) if var.get() else None, self.destroy())
+        save = lambda _=None: self._commit_value(var.get())
         cb.bind('<Return>', save)
         cb.bind('<Escape>', lambda _: self.cancel())
         cb.bind('<FocusOut>', save)
@@ -600,8 +600,7 @@ class CellEditor:
 
     def _save_bool(self, var, label):
         value = "True" if var.get() else "False"
-        self.on_save_callback(self.item, self.col_idx, value)
-        self.frame.after(150, self.destroy)
+        self._commit_value(value)
 
     # ── Generic text entry ──
     def _text_entry(self):
@@ -610,7 +609,7 @@ class CellEditor:
         entry.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         entry.focus()
         entry.select_range(0, tk.END)
-        save = lambda _=None: (self.on_save_callback(self.item, self.col_idx, var.get()), self.destroy())
+        save = lambda _=None: self._commit_value(var.get())
         entry.bind('<Return>', save)
         entry.bind('<Escape>', lambda _: self.cancel())
         entry.bind('<FocusOut>', save)
@@ -620,6 +619,13 @@ class CellEditor:
         self.frame.update_idletasks()
         self.frame.place(width=max(min_w, self.frame.winfo_reqwidth()), height=max(min_h, self.frame.winfo_reqheight()))
         self.frame.lift()
+
+    def _commit_value(self, value):
+        if self._saving or self.frame is None:
+            return
+        self._saving = True
+        self.destroy()
+        self.on_save_callback(self.item, self.col_idx, value)
 
     def cancel(self):
         self.destroy()
@@ -634,13 +640,10 @@ class CellEditor:
 # DATA ENTRY SCREEN — COMMAND CENTER LAYOUT
 # ═════════════════════════════════════════════════════════════════════════════
 
-class DataEntryScreen(tk.Frame):
+class DataEntryScreen(SessionScreenMixin, tk.Frame):
     """Split-pane command center: data table on the left, live map on the right."""
 
-    INTENSITY_THRESHOLDS = [
-        (137, 'C5'), (113, 'C4'), (96, 'C3'), (83, 'C2'),
-        (64, 'C1'), (48, 'STS'), (34, 'TS'), (0, 'TD'),
-    ]
+    INTENSITY_THRESHOLDS = INTENSITY_THRESHOLDS
     COLUMNS = [
         ("Time (UTC)", 18), ("Lead Time (h)", 10), ("Lat", 8), ("Lon", 8),
         ("Wind (kt)", 10), ("Landfall", 8), ("Storm Type", 12),
@@ -652,17 +655,14 @@ class DataEntryScreen(tk.Frame):
     def __init__(self, master, on_back):
         super().__init__(master, bg=DARK_BG)
         self.on_back = on_back
+        self._init_session()
         self.forecaster_confidence_var = tk.StringVar(value="Moderate")
         self.storm_name_var = tk.StringVar(value="CycloneAid")
         self.cell_editor = None
-        self.intensity_overrides = set()
-        self.last_fig = None
-        self.last_prognostic_fig = None
-        self.last_ri_fig = None
-        self._map_markers = []
+        self._map_markers = {}
         self._map_path = None
-        self._syncing_map = False
         self._create_ui()
+        self._start_session()
 
     # ─────────────────────────────────────────────────────────
     # UI CONSTRUCTION
@@ -750,34 +750,31 @@ class DataEntryScreen(tk.Frame):
         self.tree.tag_configure('warning', background=CURRENT_THEME.WARNING_BG, foreground=ACCENT)
         self.tree.tag_configure('normal', background=DARK_BG, foreground=WHITE)
 
-        self.bind_all("<Delete>", self._on_delete_key)
-        self.bind_all("<Control-s>", lambda e: self.export_csv())
 
     # ── Row management toolbar ──
     def _build_row_toolbar(self, parent):
-        bf = tk.Frame(parent, bg=DARK_BG)
-
-        tk.Label(bf, text="Rows:", font=("Segoe UI", 10, "bold"), fg=ACCENT, bg=DARK_BG).pack(side=tk.LEFT, padx=(4, 8))
-        self._tb(bf, "➕ Add", self.add_row, PRIMARY_COLOR, DARK_BG)
-        self._tb(bf, "⬆ Above", self.insert_row_above, LIGHT_BG, WHITE)
-        self._tb(bf, "⬇ Below", self.insert_row_below, LIGHT_BG, WHITE)
-        self._tb(bf, "📋 Dup", self.duplicate_row, LIGHT_BG, WHITE)
-        self._tb(bf, "➖ Del", self.remove_row, "#c0392b", WHITE)
-        self._tb(bf, "🔼", self.move_row_up, LIGHT_BG, WHITE)
-        self._tb(bf, "🔽", self.move_row_down, LIGHT_BG, WHITE)
-
-        tk.Frame(bf, bg=DARK_BG, width=12).pack(side=tk.LEFT)
-        tk.Label(bf, text="Table:", font=("Segoe UI", 10, "bold"), fg=ACCENT, bg=DARK_BG).pack(side=tk.LEFT, padx=(4, 8))
-        self._tb(bf, "🗑️ Clear", self.clear_table, "#c0392b", WHITE)
-
-        tk.Frame(bf, bg=DARK_BG, width=12).pack(side=tk.LEFT)
-        tk.Label(bf, text="I/O:", font=("Segoe UI", 10, "bold"), fg=ACCENT, bg=DARK_BG).pack(side=tk.LEFT, padx=(4, 8))
-        self._tb(bf, "📂 CSV", self.import_csv, LIGHT_BG, WHITE)
-        self._tb(bf, "📡 GPX", self.import_gpx, LIGHT_BG, WHITE)
-        self._tb(bf, "📂 KML", self.import_kml, LIGHT_BG, WHITE)
-        self._tb(bf, "💾 Export", self.export_csv, LIGHT_BG, WHITE)
-
-        bf.pack(fill=tk.X, padx=4, pady=4)
+        rows = tk.Frame(parent, bg=DARK_BG)
+        for label, action in [("➕ Add", self.add_row), ("⬆ Above", self.insert_row_above),
+                              ("⬇ Below", self.insert_row_below), ("Dup", self.duplicate_row),
+                              ("Delete", self.remove_row), ("🔼", self.move_row_up),
+                              ("🔽", self.move_row_down), ("Clear", self.clear_table)]:
+            self._tb(rows, label, action, LIGHT_BG, WHITE)
+        rows.pack(fill=tk.X, padx=4, pady=3)
+        io = tk.Frame(parent, bg=DARK_BG)
+        for label, action in [("CSV", self.import_csv), ("GPX", self.import_gpx),
+                              ("KML/KMZ", self.import_kml), ("Export CSV", self.export_csv)]:
+            self._tb(io, label, action, LIGHT_BG, WHITE)
+        project = tk.Menubutton(io, text="Project ▾", bg=LIGHT_BG, fg=WHITE,
+                               font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=8)
+        menu = tk.Menu(project, tearoff=0)
+        for label, action in [("Open… (Ctrl+O)", self.open_session), ("Save (Ctrl+S)", self.save_session),
+                              ("Save as…", self.save_session_as), ("Undo (Ctrl+Z)", self.undo),
+                              ("Redo (Ctrl+Y)", self.redo), ("Session settings…", self.session_settings),
+                              ("Prepare map assets…", self.prepare_assets)]:
+            menu.add_command(label=label, command=action)
+        project.config(menu=menu)
+        project.pack(side=tk.LEFT, padx=4)
+        io.pack(fill=tk.X, padx=4, pady=3)
 
     def _tb(self, parent, text, cmd, bg, fg):
         """Create a styled toolbar button with hover."""
@@ -821,16 +818,17 @@ class DataEntryScreen(tk.Frame):
     # ── Live Map Panel ──
     def _build_map_panel(self, parent):
         header = tk.Frame(parent, bg=DARK_BG)
-        tk.Label(header, text="🗺️ Live Map", font=("Segoe UI", 14, "bold"),
+        tk.Label(header, text="🗺️ Map — OSM tiles need connectivity", font=("Segoe UI", 14, "bold"),
                  fg=PRIMARY_COLOR, bg=DARK_BG).pack(side=tk.LEFT, padx=8)
 
         if not _HAS_MAP:
             tk.Label(header, text="(tkintermapview not installed)", font=("Segoe UI", 9, "italic"),
                      fg="#ff8080", bg=DARK_BG).pack(side=tk.LEFT, padx=4)
+        self._tb(header, "Fit track", self.fit_map, LIGHT_BG, WHITE)
         header.pack(fill=tk.X, pady=(4, 2))
 
         if _HAS_MAP:
-            self.map_widget = tkintermapview.TkinterMapView(parent, corner_radius=0)
+            self.map_widget = ManagedMapView(parent, corner_radius=0)
             self.map_widget.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
             # Default centre — western Pacific
             self.map_widget.set_position(14.5, 121.0)
@@ -900,79 +898,11 @@ class DataEntryScreen(tk.Frame):
         self._local_tz.config(text=f"{now_local.strftime('%Y-%m-%d')}  {tz_name} (UTC{sign}{offset_hrs:g})")
 
         self._row_count_lbl.config(text=f"Rows: {len(self.tree.get_children())}")
-        self.after(1000, self._tick_clock)
+        self._clock_after = self.after(1000, self._tick_clock)
 
     # ─────────────────────────────────────────────────────────
     # ROW MANAGEMENT
     # ─────────────────────────────────────────────────────────
-    def _default_row(self):
-        return ["", "0", "", "", "", "False", "Tropical", "TD", "False"]
-
-    def add_row(self, values=None):
-        if values is None:
-            values = self._default_row()
-        self.tree.insert("", "end", values=values)
-        self._update_action_buttons()
-        self._sync_map()
-
-    def insert_row_above(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showinfo("Insert Above", "Select a row first.")
-            return
-        self.tree.insert("", self.tree.index(sel[0]), values=self._default_row())
-        self._update_action_buttons()
-        self._sync_map()
-
-    def insert_row_below(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showinfo("Insert Below", "Select a row first.")
-            return
-        self.tree.insert("", self.tree.index(sel[-1]) + 1, values=self._default_row())
-        self._update_action_buttons()
-        self._sync_map()
-
-    def duplicate_row(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showinfo("Duplicate", "Select a row first.")
-            return
-        for item in sel:
-            vals = self.tree.item(item, 'values')
-            self.tree.insert("", self.tree.index(item) + 1, values=vals)
-        self._update_action_buttons()
-        self._sync_map()
-
-    def move_row_up(self):
-        for item in self.tree.selection():
-            idx = self.tree.index(item)
-            if idx > 0:
-                self.tree.move(item, '', idx - 1)
-        self._sync_map()
-
-    def move_row_down(self):
-        for item in reversed(self.tree.selection()):
-            idx = self.tree.index(item)
-            if idx < len(self.tree.get_children()) - 1:
-                self.tree.move(item, '', idx + 1)
-        self._sync_map()
-
-    def remove_row(self):
-        for item in self.tree.selection():
-            self.tree.delete(item)
-        self._update_action_buttons()
-        self._sync_map()
-
-    def clear_table(self):
-        if not self.tree.get_children():
-            return
-        if messagebox.askyesno("Clear Table", "Are you sure you want to delete all rows?"):
-            self.tree.delete(*self.tree.get_children())
-            self.intensity_overrides.clear()
-            self._update_action_buttons()
-            self._sync_map()
-
     # ── Context menu ──
     def _show_row_context_menu(self, event):
         item = self.tree.identify_row(event.y)
@@ -990,20 +920,6 @@ class DataEntryScreen(tk.Frame):
         menu.add_command(label="➖  Delete Row", command=self.remove_row)
         menu.tk_popup(event.x_root, event.y_root)
 
-    # ── Guard leaving ──
-    def _on_back_guarded(self):
-        if self.tree.get_children():
-            if not messagebox.askyesno("Unsaved Data", "Going home will clear your current data. Continue?"):
-                return
-        self.on_back()
-
-    def _on_delete_key(self, event):
-        if self.focus_get() == self.tree:
-            self.remove_row()
-
-    # ─────────────────────────────────────────────────────────
-    # CELL EDITING
-    # ─────────────────────────────────────────────────────────
     def _on_double_click(self, event):
         if self.cell_editor:
             self.cell_editor.destroy()
@@ -1021,692 +937,6 @@ class DataEntryScreen(tk.Frame):
             self.table_frame, self.tree, item, col, col_idx, col_name, old_value, self._on_cell_save
         )
 
-    def _on_cell_save(self, item, col_idx, new_value):
-        """Process saved cell value and cascade updates."""
-        values = list(self.tree.item(item, 'values'))
-        col_name = self.COLUMNS[col_idx][0]
-
-        if col_name == "Intensity":
-            values[col_idx] = new_value
-            self.intensity_overrides.add(item)
-            self.tree.item(item, values=values)
-            self._sync_map()
-
-        elif col_name == "Wind (kt)":
-            values[col_idx] = new_value
-            try:
-                wind = int(float(new_value)) if new_value else 0
-            except ValueError:
-                wind = 0
-            storm_type = values[6] if len(values) > 6 else "Tropical"
-            if storm_type == "Tropical" and item not in self.intensity_overrides:
-                values[7] = self._auto_intensity(wind)
-            self.tree.item(item, values=values)
-            self._sync_map()
-
-        elif col_name == "Time (UTC)":
-            values[col_idx] = new_value
-            try:
-                children = self.tree.get_children()
-                if children:
-                    t0 = pd.to_datetime(self.tree.item(children[0], 'values')[0])
-                    t = pd.to_datetime(new_value)
-                    values[1] = str(int((t - t0).total_seconds() // 3600))
-            except Exception:
-                pass
-            self.tree.item(item, values=values)
-
-        elif col_name == "Lead Time (h)":
-            values[col_idx] = new_value
-            try:
-                children = self.tree.get_children()
-                if children:
-                    t0 = pd.to_datetime(self.tree.item(children[0], 'values')[0])
-                    t = t0 + pd.Timedelta(hours=int(new_value))
-                    values[0] = t.strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                pass
-            self.tree.item(item, values=values)
-
-        elif col_name in ("Lat", "Lon"):
-            values[col_idx] = new_value
-            # Auto-detect landfall if landmask available
-            try:
-                lat_val = float(values[2])
-                lon_val = float(values[3])
-                if _HAS_LANDMASK:
-                    is_land = _globe.is_land(lat_val, lon_val)
-                    children = list(self.tree.get_children())
-                    cur_idx = children.index(item)
-                    if cur_idx > 0:
-                        prev = self.tree.item(children[cur_idx - 1], 'values')
-                        try:
-                            prev_land = _globe.is_land(float(prev[2]), float(prev[3]))
-                            if is_land and not prev_land:
-                                values[5] = "True"
-                            elif not is_land:
-                                values[5] = "False"
-                        except (ValueError, IndexError):
-                            pass
-                    elif not is_land:
-                        values[5] = "False"
-            except (ValueError, IndexError):
-                pass
-            self.tree.item(item, values=values)
-            self._sync_map()
-        else:
-            values[col_idx] = new_value
-            self.tree.item(item, values=values)
-
-        self._update_action_buttons()
-        self.cell_editor = None
-
-    # ─────────────────────────────────────────────────────────
-    # MAP ↔ TABLE SYNC
-    # ─────────────────────────────────────────────────────────
-    def _sync_map(self):
-        """Redraw map markers and track line from current table data."""
-        if not _HAS_MAP or self.map_widget is None or self._syncing_map:
-            return
-        self._syncing_map = True
-        try:
-            # Clear old markers and path
-            for m in self._map_markers:
-                try:
-                    m.delete()
-                except Exception:
-                    pass
-            self._map_markers.clear()
-            if self._map_path:
-                try:
-                    self._map_path.delete()
-                except Exception:
-                    pass
-                self._map_path = None
-
-            coords = []  # (lat, lon) list for track line
-            for item in self.tree.get_children():
-                vals = self.tree.item(item, 'values')
-                try:
-                    lat = float(vals[2])
-                    lon = float(vals[3])
-                except (ValueError, IndexError):
-                    continue
-
-                intensity = vals[7] if len(vals) > 7 else "TD"
-                color = INTENSITY_COLORS.get(intensity, "#ffffff")
-                landfall = vals[5] == "True" if len(vals) > 5 else False
-                marker_text = f"{intensity}"
-                if landfall:
-                    marker_text += " ⛱"
-
-                marker = self.map_widget.set_marker(
-                    lat, lon, text=marker_text,
-                    marker_color_circle=color,
-                    marker_color_outside=color,
-                )
-                self._map_markers.append(marker)
-                coords.append((lat, lon))
-
-            # Draw track line
-            if len(coords) >= 2:
-                self._map_path = self.map_widget.set_path(
-                    [c for c in coords], color="#ffffff", width=2
-                )
-
-            # Auto-fit map to track bounds
-            if coords:
-                lats = [c[0] for c in coords]
-                lons = [c[1] for c in coords]
-                if len(coords) == 1:
-                    self.map_widget.set_position(lats[0], lons[0])
-                    self.map_widget.set_zoom(8)
-                else:
-                    center_lat = (min(lats) + max(lats)) / 2
-                    center_lon = (min(lons) + max(lons)) / 2
-                    self.map_widget.set_position(center_lat, center_lon)
-                    # Rough zoom estimate
-                    span = max(max(lats) - min(lats), max(lons) - min(lons))
-                    zoom = max(3, min(12, int(10 - span / 3)))
-                    self.map_widget.set_zoom(zoom)
-        finally:
-            self._syncing_map = False
-
-    def _on_map_right_click(self, coords):
-        """Add a new row pre-filled with the clicked coordinates."""
-        lat, lon = coords
-        row = self._default_row()
-        row[2] = f"{lat:.4f}"
-        row[3] = f"{lon:.4f}"
-
-        # Auto-detect landfall
-        if _HAS_LANDMASK:
-            is_land = _globe.is_land(lat, lon)
-            # Check previous row
-            children = self.tree.get_children()
-            if children:
-                prev = self.tree.item(children[-1], 'values')
-                try:
-                    prev_land = _globe.is_land(float(prev[2]), float(prev[3]))
-                    if is_land and not prev_land:
-                        row[5] = "True"
-                except (ValueError, IndexError):
-                    pass
-
-        self.add_row(values=row)
-
-    # ─────────────────────────────────────────────────────────
-    # VALIDATION & HELPERS
-    # ─────────────────────────────────────────────────────────
-    def _set_status(self, text, color="#aaa"):
-        self._status_lbl.config(text=text, fg=color)
-
-    def _set_buttons_loading(self, loading, message=""):
-        state = tk.DISABLED if loading else tk.NORMAL
-        for btn in self._action_btns:
-            btn.config(state=state)
-        if loading:
-            self._set_status(message, ACCENT)
-        else:
-            self._set_status("Ready")
-            self._update_action_buttons()
-
-    def _update_action_buttons(self, force_validation=True):
-        if force_validation:
-            valid = self._is_table_valid()
-        else:
-            # Quick check: just see if there's any row
-            valid = len(self.tree.get_children()) > 0
-        
-        state = tk.NORMAL if valid else tk.DISABLED
-        for btn in self._action_btns:
-            btn.config(state=state)
-
-    def _is_table_valid(self):
-        is_valid = True
-        for item in self.tree.get_children():
-            vals = self.tree.item(item, 'values')
-            ok = True
-            try:
-                pd.to_datetime(vals[0])
-                lat, lon = float(vals[2]), float(vals[3])
-                wind = int(vals[4])
-                intensity = vals[7].strip() if len(vals) > 7 else ""
-                if not (-90 <= lat <= 90) or not (-180 <= lon <= 360) or wind < 0 or not intensity:
-                    ok = False
-            except Exception:
-                ok = False
-            self.tree.item(item, tags=('normal' if ok else 'invalid',))
-            if not ok:
-                is_valid = False
-        return is_valid
-
-    @staticmethod
-    def _auto_intensity(wind):
-        for threshold, label in DataEntryScreen.INTENSITY_THRESHOLDS:
-            if wind >= threshold:
-                return label
-        return "TD"
-
-    # ─────────────────────────────────────────────────────────
-    # IMPORT / EXPORT
-    # ─────────────────────────────────────────────────────────
-    def import_csv(self):
-        path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
-        if not path:
-            return
-        try:
-            df = pd.read_csv(path, comment="#")
-            self.tree.delete(*self.tree.get_children())
-            self.intensity_overrides.clear()
-
-            for _, row in df.iterrows():
-                wind_val = row.get('wind_kt', '')
-                try:
-                    wind = int(float(wind_val)) if not pd.isna(wind_val) and str(wind_val).strip() else 0
-                except (ValueError, TypeError):
-                    wind = 0
-
-                is_overridden = False
-                if 'intensity_class' in df.columns and 'storm_type' in df.columns:
-                    intensity = row.get('intensity_class')
-                    if pd.isna(intensity) or not str(intensity).strip():
-                        intensity = self._auto_intensity(wind)
-                    else:
-                        intensity = str(intensity).strip()
-                        is_overridden = True
-                    storm_type = row.get('storm_type')
-                    storm_type = str(storm_type).strip() if not pd.isna(storm_type) and str(storm_type).strip() else 'Tropical'
-                else:
-                    cat_val = row.get('category')
-                    if pd.isna(cat_val) or not str(cat_val).strip():
-                        intensity = self._auto_intensity(wind)
-                        storm_type = 'Tropical'
-                    else:
-                        category = str(cat_val).strip()
-                        if category == 'L':
-                            intensity, storm_type = 'TD', 'Low'
-                        elif category == 'EX':
-                            intensity, storm_type = self._auto_intensity(wind), 'Extratropical'
-                        elif category in ('SD', 'SS'):
-                            intensity = 'TS' if category == 'SS' else 'TD'
-                            storm_type = 'Subtropical'
-                        else:
-                            intensity, storm_type = category, 'Tropical'
-                            is_overridden = True
-
-                item = self.tree.insert("", "end", values=[
-                    str(row.get('time', '')), "0",
-                    str(row.get('lat', '')), str(row.get('lon', '')),
-                    str(wind_val) if not pd.isna(wind_val) else '',
-                    str(row.get('landfall', False)), storm_type, intensity,
-                    str(row.get('is_interpolated', False)),
-                ])
-                if is_overridden:
-                    self.intensity_overrides.add(item)
-
-            self._recalc_lead_times()
-            self._update_action_buttons()
-            self._sync_map()
-        except Exception as e:
-            messagebox.showerror("Import Error", f"Failed to import CSV: {e}")
-
-    def import_gpx(self):
-        path = filedialog.askopenfilename(filetypes=[("GPX Files", "*.gpx")])
-        if not path:
-            return
-        try:
-            df = storm_tracker.read_gpx_to_dataframe(path)
-            self.tree.delete(*self.tree.get_children())
-            self.intensity_overrides.clear()
-
-            for _, row in df.iterrows():
-                try:
-                    time_str = pd.to_datetime(row.get('time')).strftime("%Y-%m-%d %H:%M")
-                except Exception:
-                    time_str = str(row.get('time', ''))
-
-                wind_val = row.get('wind_kt', '')
-                try:
-                    wind = int(float(wind_val)) if not pd.isna(wind_val) and str(wind_val).strip() else 0
-                except (ValueError, TypeError):
-                    wind = 0
-
-                storm_type = row.get('storm_type')
-                storm_type = str(storm_type).strip() if not pd.isna(storm_type) and str(storm_type).strip() else 'Tropical'
-                intensity = row.get('intensity_class')
-                is_overridden = False
-                if pd.isna(intensity) or not str(intensity).strip():
-                    intensity = self._auto_intensity(wind) if storm_type == 'Tropical' else 'TD'
-                else:
-                    intensity = str(intensity).strip()
-                    is_overridden = True
-
-                item = self.tree.insert("", "end", values=[
-                    time_str, "0",
-                    str(row.get('lat', '')), str(row.get('lon', '')),
-                    str(wind_val) if not pd.isna(wind_val) else '',
-                    str(row.get('landfall', False)), storm_type, intensity,
-                    str(row.get('is_interpolated', False)),
-                ])
-                if is_overridden:
-                    self.intensity_overrides.add(item)
-
-            self._recalc_lead_times()
-            self._update_action_buttons()
-            self._sync_map()
-
-            has_interp = any(row.get('is_interpolated', False) for _, row in df.iterrows())
-            if has_interp:
-                messagebox.showwarning("GPX Import",
-                    "This track contains interpolated points.\nTimestamps were missing and have been generated.")
-        except Exception as e:
-            messagebox.showerror("Import Error", f"Failed to import GPX: {e}")
-
-    def import_kml(self):
-        """Import a KML file and populate the table with coordinates."""
-        path = filedialog.askopenfilename(filetypes=[("KML Files", "*.kml"), ("KMZ Files", "*.kmz")])
-        if not path:
-            return
-        try:
-            coords = self._parse_kml(path)
-            if not coords:
-                messagebox.showwarning("KML Import", "No coordinates found in the KML file.")
-                return
-
-            self.tree.delete(*self.tree.get_children())
-            self.intensity_overrides.clear()
-            base_time = pd.Timestamp.utcnow().floor('H')
-
-            for i, (lon, lat, alt) in enumerate(coords):
-                time_str = (base_time + pd.Timedelta(hours=i)).strftime("%Y-%m-%d %H:%M")
-                # Auto-detect landfall
-                landfall = "False"
-                if _HAS_LANDMASK and i > 0:
-                    prev_lon, prev_lat, _ = coords[i - 1]
-                    try:
-                        if _globe.is_land(lat, lon) and not _globe.is_land(prev_lat, prev_lon):
-                            landfall = "True"
-                    except Exception:
-                        pass
-
-                self.tree.insert("", "end", values=[
-                    time_str, str(i), f"{lat:.4f}", f"{lon:.4f}",
-                    "0", landfall, "Tropical", "TD", "True",
-                ])
-
-            self._recalc_lead_times()
-            self._update_action_buttons()
-            self._sync_map()
-            messagebox.showinfo("KML Import", f"Imported {len(coords)} points from KML.\n"
-                                "Timestamps are auto-generated (hourly). Edit as needed.")
-        except Exception as e:
-            messagebox.showerror("Import Error", f"Failed to import KML: {e}")
-
-    @staticmethod
-    def _parse_kml(path):
-        """Extract coordinates from a KML file. Returns list of (lon, lat, alt)."""
-        tree = ET.parse(path)
-        root = tree.getroot()
-
-        # Detect KML namespace
-        ns = ''
-        if '}' in root.tag:
-            ns = root.tag.split('}')[0] + '}'
-
-        coords_list = []
-        # Find all <coordinates> elements
-        for coord_elem in root.iter(f'{ns}coordinates'):
-            text = coord_elem.text
-            if not text:
-                continue
-            for token in text.strip().split():
-                parts = token.strip().split(',')
-                if len(parts) >= 2:
-                    try:
-                        lon, lat = float(parts[0]), float(parts[1])
-                        alt = float(parts[2]) if len(parts) >= 3 else 0.0
-                        coords_list.append((lon, lat, alt))
-                    except ValueError:
-                        continue
-        return coords_list
-
-    def export_csv(self):
-        path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
-        if not path:
-            return
-        data = []
-        for item in self.tree.get_children():
-            v = self.tree.item(item, 'values')
-            data.append({
-                'time': v[0], 'lat': v[2], 'lon': v[3], 'wind_kt': v[4],
-                'landfall': v[5],
-                'storm_type': v[6] if len(v) > 6 else 'Tropical',
-                'intensity_class': v[7] if len(v) > 7 else 'TD',
-                'is_interpolated': v[8] if len(v) > 8 else 'False',
-            })
-        try:
-            pd.DataFrame(data).to_csv(path, index=False)
-            messagebox.showinfo("Exported", f"CSV exported to {path}")
-        except Exception as e:
-            messagebox.showerror("Export Error", f"Failed to export CSV: {e}")
-
-    def _recalc_lead_times(self):
-        children = self.tree.get_children()
-        if not children:
-            return
-        try:
-            t0 = pd.to_datetime(self.tree.item(children[0], 'values')[0])
-            for item in children:
-                t = pd.to_datetime(self.tree.item(item, 'values')[0])
-                lead = int((t - t0).total_seconds() // 3600)
-                vals = list(self.tree.item(item, 'values'))
-                vals[1] = str(lead)
-                self.tree.item(item, values=vals)
-        except Exception:
-            pass
-
-    # ─────────────────────────────────────────────────────────
-    # PLOT GENERATION (threaded)
-    # ─────────────────────────────────────────────────────────
-    def _get_forecast_points(self):
-        """Build ForecastPoint objects from table data."""
-        points, errors = [], []
-        for i, item in enumerate(self.tree.get_children()):
-            v = self.tree.item(item, 'values')
-            try:
-                points.append({
-                    'time': pd.to_datetime(v[0], utc=True),
-                    'lat': float(v[2]), 'lon': float(v[3]),
-                    'wind_kt': int(v[4]),
-                    'landfall': v[5] == "True",
-                    'storm_type': v[6] if len(v) > 6 else "Tropical",
-                    'intensity_class': v[7] if len(v) > 7 else "TD",
-                    'is_interpolated': v[8] == "True" if len(v) > 8 else False,
-                })
-            except Exception as e:
-                errors.append(f"Row {i + 1}: {e}")
-
-        if errors:
-            msg = "Invalid data found in rows:\n" + "\n".join(errors[:5])
-            if len(errors) > 5:
-                msg += f"\n... and {len(errors) - 5} more."
-            messagebox.showwarning("Input Error", msg)
-        return points
-
-    def _to_fp(self, pts):
-        """Convert dict list to ForecastPoint list."""
-        return [
-            storm_tracker.ForecastPoint(
-                time=p['time'], lat=p['lat'], lon=p['lon'], wind_kt=p['wind_kt'],
-                intensity_class=p['intensity_class'], storm_type=p['storm_type'],
-                landfall=p['landfall'], is_interpolated=p['is_interpolated'],
-            ) for p in pts
-        ]
-
-    def _validate_data(self):
-        from validation import validate_forecast_points
-        return validate_forecast_points(self._to_fp(self._get_forecast_points()))
-
-    def _show_validation_dialog(self, vr, is_warning=False):
-        win = tk.Toplevel(self)
-        apply_dark_theme(win)
-        win.title("Validation Warnings" if is_warning else "Validation Errors")
-        win.configure(bg=DARK_BG)
-
-        if vr.has_errors():
-            tk.Label(win, text="❌ Validation Errors", font=("Segoe UI", 14, "bold"),
-                     fg="#ff6060", bg=DARK_BG).pack(pady=10)
-            tk.Label(win, text="\n".join(f"• {e}" for e in vr.hard_errors),
-                     font=("Segoe UI", 10), fg=WHITE, bg=DARK_BG, justify=tk.LEFT, anchor='w').pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
-
-        if vr.has_warnings():
-            if not vr.has_errors():
-                tk.Label(win, text="⚠️ Validation Warnings", font=("Segoe UI", 14, "bold"),
-                         fg=ACCENT, bg=DARK_BG).pack(pady=10)
-            tk.Label(win, text="\n".join(f"• {w}" for w in vr.soft_warnings),
-                     font=("Segoe UI", 10), fg=WHITE, bg=DARK_BG, justify=tk.LEFT, anchor='w').pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
-
-        bf = tk.Frame(win, bg=DARK_BG)
-        bf.pack(pady=10)
-        if vr.has_errors():
-            tk.Button(bf, text="Close", command=win.destroy, bg=LIGHT_BG, fg=WHITE,
-                      font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", width=12).pack(side=tk.LEFT, padx=5)
-        else:
-            tk.Button(bf, text="Continue Anyway", command=win.destroy, bg=PRIMARY_COLOR, fg=DARK_BG,
-                      font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2", width=15).pack(side=tk.LEFT, padx=5)
-
-    # ── Track plot ──
-    def preview_track(self):
-        try:
-            vr = self._validate_data()
-            if vr.has_errors():
-                self._show_validation_dialog(vr)
-                return
-
-            points = self._get_forecast_points()
-            pts = self._to_fp(points)
-            confidence = self.forecaster_confidence_var.get()
-            name = self.storm_name_var.get().strip() or "CycloneAid"
-
-            self._set_buttons_loading(True, "Generating track plot… ⏳")
-
-            def _run():
-                try:
-                    rc = None
-                    if get_preset is not None:
-                        preset = get_preset(self.export_preset_var.get())
-                        rc = preset.build_render_context({
-                            "forecast_points": pts, "issue_time": pts[0].time,
-                            "valid_until": pts[-1].time, "has_interpolated": any(p['is_interpolated'] for p in points),
-                            "forecaster_confidence": confidence, "validation_result": vr,
-                            "validation_warning_count": len(vr.soft_warnings),
-                        })
-                    fig = storm_tracker.plot_storm_track(pts, storm_name=name, issue_time=pts[0].time,
-                                                         forecaster_confidence=confidence, render_context=rc)
-                    self.last_fig = fig
-                    self.after(0, lambda: self._finish_preview(fig, f"Track Preview — {name}", vr))
-                except Exception as e:
-                    self.after(0, lambda: messagebox.showerror("Preview Error", str(e)))
-                    self.after(0, lambda: self._set_buttons_loading(False))
-
-            threading.Thread(target=_run, daemon=True).start()
-        except Exception as e:
-            messagebox.showerror("Preview Error", str(e))
-
-    def save_track(self):
-        path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Image", "*.png")])
-        if not path:
-            return
-        try:
-            vr = self._validate_data()
-            if vr.has_errors():
-                self._show_validation_dialog(vr)
-                return
-            points = self._get_forecast_points()
-            pts = self._to_fp(points)
-            name = self.storm_name_var.get().strip() or "CycloneAid"
-            confidence = self.forecaster_confidence_var.get()
-            rc = None
-            if get_preset is not None:
-                preset = get_preset(self.export_preset_var.get())
-                rc = preset.build_render_context({
-                    "forecast_points": pts, "issue_time": pts[0].time,
-                    "valid_until": pts[-1].time, "has_interpolated": any(p['is_interpolated'] for p in points),
-                    "forecaster_confidence": confidence, "validation_result": vr,
-                    "validation_warning_count": len(vr.soft_warnings),
-                })
-            fig = storm_tracker.plot_storm_track(pts, storm_name=name, issue_time=pts[0].time,
-                                                  forecaster_confidence=confidence, render_context=rc)
-            fig.savefig(path, dpi=300, bbox_inches='tight', pad_inches=0.2)
-            messagebox.showinfo("Saved", f"Track image saved to {path}")
-        except Exception as e:
-            messagebox.showerror("Save Error", str(e))
-
-    # ── Prognostic plot ──
-    def preview_prognostic(self):
-        try:
-            vr = self._validate_data()
-            if vr.has_errors():
-                self._show_validation_dialog(vr)
-                return
-            pts = self._to_fp(self._get_forecast_points())
-            name = self.storm_name_var.get().strip() or "CycloneAid"
-            self._set_buttons_loading(True, "Generating prognostic plot… ⏳")
-
-            def _run():
-                try:
-                    fig = storm_prognostic.plot_storm_prognostic(pts, storm_name=name, issue_time=pts[0].time)
-                    self.last_prognostic_fig = fig
-                    self.after(0, lambda: self._finish_preview(fig, f"Prognostic Preview — {name}", vr))
-                except Exception as e:
-                    self.after(0, lambda: messagebox.showerror("Preview Error", str(e)))
-                    self.after(0, lambda: self._set_buttons_loading(False))
-
-            threading.Thread(target=_run, daemon=True).start()
-        except Exception as e:
-            messagebox.showerror("Preview Error", str(e))
-
-    def save_prognostic(self):
-        if not self.last_prognostic_fig:
-            messagebox.showwarning("No Plot", "Please generate a preview first.")
-            return
-        path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Image", "*.png")])
-        if not path:
-            return
-        try:
-            self.last_prognostic_fig.savefig(path, dpi=300, bbox_inches='tight', pad_inches=0.2)
-            messagebox.showinfo("Saved", f"Prognostic image saved to {path}")
-        except Exception as e:
-            messagebox.showerror("Save Error", str(e))
-
-    # ── RI plot ──
-    def preview_ri(self):
-        try:
-            vr = self._validate_data()
-            if vr.has_errors():
-                self._show_validation_dialog(vr)
-                return
-            pts = self._to_fp(self._get_forecast_points())
-            name = self.storm_name_var.get().strip() or "CycloneAid"
-            self._set_buttons_loading(True, "Generating RI plot… ⏳")
-
-            def _run():
-                try:
-                    fig = storm_ri_plot.plot_ri_from_forecast_points(pts, window_hours=24, storm_name=name)
-                    self.last_ri_fig = fig
-                    self.after(0, lambda: self._finish_preview(fig, f"RI (dV/dt) Preview — {name}", vr))
-                except Exception as e:
-                    self.after(0, lambda: messagebox.showerror("RI Preview Error", str(e)))
-                    self.after(0, lambda: self._set_buttons_loading(False))
-
-            threading.Thread(target=_run, daemon=True).start()
-        except Exception as e:
-            messagebox.showerror("RI Preview Error", str(e))
-
-    def save_ri(self):
-        if not self.last_ri_fig:
-            messagebox.showwarning("No Plot", "Please generate an RI preview first.")
-            return
-        path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG Image", "*.png")])
-        if not path:
-            return
-        try:
-            self.last_ri_fig.savefig(path, dpi=300, bbox_inches='tight', pad_inches=0.2,
-                                      facecolor=self.last_ri_fig.get_facecolor())
-            messagebox.showinfo("Saved", f"RI plot saved to {path}")
-        except Exception as e:
-            messagebox.showerror("Save Error", str(e))
-
-    # ── Common preview finish ──
-    def _finish_preview(self, fig, title, vr):
-        self._set_buttons_loading(False)
-        self._set_status(f"{title.split(' — ')[0]} ready ✓", PRIMARY_COLOR)
-        if vr.has_warnings():
-            self._show_validation_dialog(vr, is_warning=True)
-        self._show_preview(fig, title=title)
-
-    def _show_preview(self, fig, title="Preview"):
-        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-        win = tk.Toplevel(self)
-        apply_dark_theme(win)
-        win.title(title)
-        win.geometry("900x700")
-        win.configure(bg=DARK_BG)
-
-        pf = tk.Frame(win, bg=DARK_BG)
-        pf.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        canvas = FigureCanvasTkAgg(fig, master=pf)
-        canvas.draw()
-
-        tf = tk.Frame(win, bg=DARK_BG)
-        tf.pack(fill=tk.X, side=tk.BOTTOM, pady=5)
-        NavigationToolbar2Tk(canvas, tf).update()
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        tk.Button(tf, text="Close Preview", command=win.destroy, bg=LIGHT_BG, fg=WHITE,
-                  font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT, padx=10, pady=2)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1746,8 +976,16 @@ class StormTrackerApp(tk.Tk):
         self.minsize(1000, 650)
         self.configure(bg=DARK_BG)
         self.current_frame = None
+        self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(100, self._maximize)
         self.show_home()
+
+    def _close(self):
+        if isinstance(self.current_frame, DataEntryScreen) and not self.current_frame._confirm_leave():
+            return
+        if self.current_frame:
+            self.current_frame.destroy()
+        self.destroy()
 
     def _maximize(self):
         try:
@@ -1766,8 +1004,3 @@ class StormTrackerApp(tk.Tk):
             self.current_frame.destroy()
         self.current_frame = DataEntryScreen(self, self.show_home)
         self.current_frame.pack(fill=tk.BOTH, expand=True)
-
-
-if __name__ == "__main__":
-    app = StormTrackerApp()
-    app.mainloop()
