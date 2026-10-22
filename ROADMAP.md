@@ -31,7 +31,7 @@ Gate: pure generation and session/GUI regressions pass, incomplete drafts cannot
 
 Redesign the operator workflow around direct workspace startup, project/session controls, a forecast editor, and on-demand embedded chart tabs. Keep explicit map readiness, separate OSM availability, editable unnamed drafts, and a shared Sky/Typhoon appearance switch. See the [workspace guide](docs/workspace.md).
 
-Delivery is split into [shared theme/name controls #9](https://github.com/4caster-zay/CycloneAid/pull/9), [map readiness #10](https://github.com/4caster-zay/CycloneAid/pull/10), and workspace/output integration. Verification covers both themes and three screen sizes, keyboard/focus behavior, project ownership of background outcomes, packaging, and required CI. Native platform/network follow-ups remain open in the alpha stabilization milestone.
+Delivery is split into [shared theme/name controls #9](https://github.com/4caster-zay/CycloneAid/pull/9), [map readiness #10](https://github.com/4caster-zay/CycloneAid/pull/10), and [workspace/output integration #11](https://github.com/4caster-zay/CycloneAid/pull/11). Verification covers both themes and three screen sizes, keyboard/focus behavior, project ownership of background outcomes, packaging, and required CI. Native platform/network follow-ups remain open in the alpha stabilization milestone.
 
 ## Later candidates
 
