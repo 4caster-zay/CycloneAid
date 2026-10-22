@@ -1,7 +1,13 @@
 # Changelog
 
-## Next alpha — unreleased
+## 0.10.0a2 — 2026-10-22 (alpha testing release)
 
+- Generate timestamp-only forecast rows from an explicit UTC start, interval, and horizon; preview before appending as one undoable action, preserving generated timestamp provenance without labeling forecast values interpolated.
+- Keep new sessions empty so operators can generate their first rows directly. Generated coordinates and winds remain blank until entered and validated.
+- Preserve fractional seconds in table display and timestamp editing, including closely spaced generated rows.
+- Establish a linked roadmap, contribution guide, issue/PR templates, grouped monthly dependency updates, and required cross-platform CI checks on main.
+- Archive the original review with a current reconciliation and move diagnostic benchmarks under documentation.
+- Include examples, launchers, locked dependencies, release tools, and linked documentation in source distributions.
 - Fix CI's missing Tk runtime, explicitly select Python 3.12, and keep platform checks running independently.
 - Preserve an existing preview if replacement initialization fails; release failed figures and cancel pending embedded-canvas callbacks before closing.
 - Record worker and Tk callback tracebacks in rotating local logs and identify the log path in preview error dialogs.

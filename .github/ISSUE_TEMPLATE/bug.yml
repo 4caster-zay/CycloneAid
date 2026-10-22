@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible problem in CycloneAid.
+title: "[Bug]: "
+labels: [bug, "priority:normal"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the starting project or sample, actions or command, and relevant settings.
+      placeholder: |
+        1. Open examples/sample.cycloneaid.json.
+        2. ...
+        Geography mode: degraded / full
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Find the application version on the home screen; include the operating system, Python version, and installation method.
+      placeholder: |
+        CycloneAid version:
+        Operating system:
+        Python version:
+        Installation: setup script / uv / pip
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Error, logs, or example input
+      description: Paste the exact error and relevant log excerpt, or attach a small project/CSV and screenshot. For chart problems, include the input times, coordinates, winds, and wind averaging assumption needed to reproduce the result.
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Related issues or dependencies
+      description: Link any related report or required follow-up; leave blank if none is known.

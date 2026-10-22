@@ -1,4 +1,8 @@
-# Diagnostic performance measurements
+# Historical diagnostic performance measurements
+
+**Archive:** these are the original 21 October 2026 measurements, not current-release performance gates. They accompany the [historical review and its reconciliation](../history/PROJECT_REVIEW.md). The reviewed baseline is pinned to [`592ca1f`](https://github.com/4caster-zay/CycloneAid/tree/592ca1f5b6ee8b856945adebb5f9c84df78d3e6b); the original table labels its candidate `0.10.0a1` but does not retain a candidate commit SHA. Do not attribute these medians to a later release or infer end-to-end latency from them.
+
+The [benchmark tool](../../tools/benchmark.py) remains available. Run the command below from the repository root to produce a fresh comparison against the current checkout, and record its commit/environment alongside any new results. Moving this document did not rerun or change the historical measurements.
 
 Measured 21 October 2026 against review commit `592ca1f`, with five measured runs per operation after one warm-up. Both versions used the same Python 3.12.14 environment and deterministic synthetic inputs.
 

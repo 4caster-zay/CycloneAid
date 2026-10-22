@@ -1,6 +1,6 @@
 """Single source for application and distribution metadata."""
-__version__ = "0.10.0a1"
+__version__ = "0.10.0a2"
 APP_NAME = "CycloneAid"
 CREATOR = "Forecaster Zayed"
-DISPLAY_VERSION = f"{__version__} (Alpha 1)"
+DISPLAY_VERSION = f"{__version__} (Alpha 2)"
 CONE_METHOD = "legacy-heuristic-v1"

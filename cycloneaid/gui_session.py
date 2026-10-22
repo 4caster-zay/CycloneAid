@@ -75,8 +75,8 @@ class SessionScreenMixin:
                            confidence=self.forecaster_confidence_var.get(), preset=self.export_preset_var.get())
         self._commit(settings=settings)
 
-    def _commit(self, *, rows=None, settings=None, fit=False):
-        if self.controller.commit(rows=rows, settings=settings):
+    def _commit(self, *, rows=None, settings=None, fit=False, infer_issue_time=True):
+        if self.controller.commit(rows=rows, settings=settings, infer_issue_time=infer_issue_time):
             self._session_changed(fit=fit)
 
     def _session_changed(self, fit=False):
@@ -111,7 +111,7 @@ class SessionScreenMixin:
                 try:
                     point = parse_row(row)
                     if not pd.isna(point.time):
-                        values[0] = point.time.strftime("%Y-%m-%d %H:%M:%S")
+                        values[0] = point.time.tz_localize(None).isoformat(sep=" ")
                         values[1] = f"{(point.time-issue).total_seconds()/3600:g}" if not pd.isna(issue) else ""
                     values[3] = f"{point.lon:g}"
                     result = validate_forecast_points([point])
@@ -161,6 +161,10 @@ class SessionScreenMixin:
 
     def add_row(self, values=None):
         self._commit(rows=(*self.controller.session.rows, ForecastRow(tuple(values or self._default_row()))))
+
+    def generate_rows(self):
+        from cycloneaid.gui_generation import GenerateRowsDialog
+        return GenerateRowsDialog(self)
 
     def _insert(self, below):
         selection = self.tree.selection()

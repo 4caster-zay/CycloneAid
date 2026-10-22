@@ -71,7 +71,7 @@ class ForecastPoint:
         values = dict(time=utc_timestamp(time), lat=float(lat), lon=normalize_longitude(lon),
                       wind_kt=wind, intensity_class=intensity_class or derive_intensity(wind),
                       storm_type=storm_type or "Tropical", landfall=parse_bool(landfall),
-                      is_interpolated=estimated or time_origin != "provided",
+                      is_interpolated=estimated or time_origin in ("interpolated", "legacy-estimated"),
                       override_reason=str(override_reason or "").strip(), time_origin=time_origin)
         for name, value in values.items():
             object.__setattr__(self, name, value)
