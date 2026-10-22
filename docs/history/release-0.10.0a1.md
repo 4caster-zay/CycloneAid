@@ -1,8 +1,8 @@
 # 0.10.0a1 release verification
 
-Status: **0.10.0a1 alpha testing build — 21 October 2026**. This build is intended for client feedback. The outstanding platform and network checks below remain part of alpha testing and are not claims of verified compatibility.
+**Historical record: 21 October 2026.** Version `0.10.0a1` was an alpha build for client feedback. This page preserves its verification results and outstanding checks at the time. See the [current release checklist](../../RELEASE_CHECKLIST.md) for later results.
 
-## Local gates
+## Completed local checks
 
 - [x] Reproduced the RI datetime/provenance regression before fixing it.
 - [x] Regression coverage for domain validation, staged imports, project round-trips, atomic failure handling, undo/redo, and timestamp provenance.
@@ -21,7 +21,7 @@ Status: **0.10.0a1 alpha testing build — 21 October 2026**. This build is inte
 - [x] Matching generated requirements export and single-source release metadata check.
 - [x] Wheel build and repeated median benchmarks; see the [benchmark archive](../benchmarks/BENCHMARK_RESULTS.md).
 
-## Remaining alpha testing and follow-up
+## Follow-up recorded at the time
 
 Follow-up verification on 22 October 2026: 47 local tests passed with Tk enabled and cached full geography, including 18 sample preview cycles across all three products. The clean core-only environment also passed (37 executed, 10 desktop/GUI checks skipped). Lint and wheel construction passed. The original unrecorded client popup has not been reproduced; new logs retain future worker and Tk tracebacks.
 
@@ -30,4 +30,4 @@ Follow-up verification on 22 October 2026: 47 local tests passed with Tk enabled
 - [ ] Confirm OSM tile behavior on target networks; cached Natural Earth readiness does not establish tile availability.
 - [ ] Collect client feedback and resolve confirmed regressions in the next alpha build (`0.10.0a2`).
 
-The version's alpha status does not establish empirical cone calibration or operational suitability. Those claims remain outside this release.
+Empirical cone calibration and operational suitability were not established by this release.

@@ -61,116 +61,117 @@ CHANGELOG = [
         "version": VERSION,
         "date": "2026-10-22",
         "entries": [
-            "Open directly into a forecast workspace with embedded chart tabs.",
-            "Use explicit map readiness and setup, with independent OSM tile status.",
-            "Switch Sky/Typhoon appearance with accessible controls and edit unnamed drafts naturally.",
-            "Keep fitted previews, keyboard editing, and project state stable while rendering."
+            "Added a forecast workspace with embedded chart tabs and grouped project and row controls.",
+            "Added chart-map setup and readiness indicators, with separate OSM tile status.",
+            "Added a keyboard-accessible Sky/Typhoon switch and saved local appearance preferences.",
+            "Allowed blank storm names and preserved pending edits through save and recovery.",
+            "Fitted previews to the output pane and preserved editing focus and project state during rendering."
         ],
     },
     {
         "version": "0.10.0a2 (Alpha 2)",
         "date": "2026-10-22",
         "entries": [
-            "Generate UTC forecast timestamps with a range preview and one-step undo.",
-            "Keep draft coordinates and winds blank; distinguish generated times from interpolated values.",
-            "Stabilize preview cleanup, retain diagnostics, and organize alpha testing and repository maintenance."
+            "Added UTC timestamp generation with a range preview and one-step undo.",
+            "Left generated coordinates and winds blank and recorded generated timestamp provenance separately.",
+            "Fixed preview cleanup, added local error logs, and documented alpha testing and repository maintenance."
         ],
     },
     {
         "version": "0.10.0a1 (Alpha 1)",
         "date": "2026-10-21",
         "entries": [
-            "Shared validated sessions with atomic project files, recovery, and undo/redo.",
-            "Exact-window RI, geodesic heuristic envelopes, and approximate coastline landfall.",
-            "Isolated rendering and exports, indexed cities, and incremental map updates."
+            "Added shared session validation, atomic project files, recovery, and undo/redo.",
+            "Corrected exact-window RI calculations and added geodesic heuristic envelopes and approximate coastline crossings.",
+            "Isolated rendering and exports, indexed city searches, and updated maps incrementally."
         ],
     },
     {
         "version": "Alpha 0.9.3",
         "date": "2026-06-08",
         "entries": [
-            "🎨 Theme Overhaul — Sleek dynamic toggle buttons for Sky and Typhoon modes.",
-            "🖌️ Contrast Fixes — Text in Sky Light mode is now true black, and muted text contrast is fixed.",
-            "🔧 Linter Cleanup — Suppressed false-positive IDE warnings for optional modules."
+            "Updated the Sky and Typhoon theme controls.",
+            "Changed Sky Light text to black and improved muted-text contrast.",
+            "Suppressed false-positive IDE warnings for optional modules."
         ],
     },
     {
         "version": "Alpha 0.9.2",
         "date": "2026-05-31",
         "entries": [
-            "🎨 Dynamic Theming — Sky Light and Typhoon Dark modes added.",
-            "📜 Custom Scrollbars — Themed scrollbars matching the active theme.",
-            "🐛 Bug Fix — Addressed internal Tkinter layout warnings for Data Table."
+            "Added Sky Light and Typhoon Dark themes.",
+            "Styled scrollbars to match the active theme.",
+            "Fixed internal Tkinter layout warnings in the data table."
         ],
     },
     {
         "version": "Alpha 0.9.1",
         "date": "2026-05-31",
         "entries": [
-            "🚀 Major Optimization — Implemented spatial indexing (R-tree) for city searches",
-            "💾 Faster Loading — Cached geography and demographic data across modules",
-            "🏗️ Refined Codebase — Decoupled plotting from data fetching for better stability",
-            "🏝️ Precision Landfall — Fixed coordinate detection via high-res mask validation",
-            "📊 UI Performance — Smoother table interactions via batched validation checks",
+            "Added an R-tree spatial index for city searches.",
+            "Cached geography and demographic data across modules.",
+            "Separated plotting from data retrieval.",
+            "Corrected landfall coordinate detection using high-resolution mask checks.",
+            "Batched table validation to improve responsiveness.",
         ],
     },
     {
         "version": "Alpha 0.9",
         "date": "2026-05-30",
         "entries": [
-            "🗺️ Live Map — Command-center split layout with TkinterMapView",
-            "🔗 Two-way sync — Table edits update map markers in real time",
-            "📍 Right-click map to add a storm data point with pre-filled coordinates",
-            "🏝️ Auto-landfall detection via global-land-mask",
-            "📂 KML import support alongside existing CSV / GPX importers",
-            "📜 Changelog viewer on the home screen",
-            "🎨 Intensity-coloured map markers with storm-type shapes",
+            "Added a split table-and-map layout using TkinterMapView.",
+            "Updated map markers when table entries changed.",
+            "Added a map context-menu action to create a forecast point with coordinates filled in.",
+            "Added automatic landfall detection using global-land-mask.",
+            "Added KML imports alongside CSV and GPX.",
+            "Added a changelog viewer to the home screen.",
+            "Added intensity-colored map markers with shapes for storm types.",
         ],
     },
     {
         "version": "Alpha 0.8.1",
         "date": "2026-04-10",
         "entries": [
-            "🧵 Threaded rendering — UI no longer freezes during plot generation",
-            "📊 Interactive matplotlib preview windows with navigation toolbar",
-            "🛡️ Navigation guard — warns before discarding unsaved data",
-            "✅ Real-time data validation with visual row highlighting",
+            "Moved plot generation to a background thread to keep the interface responsive.",
+            "Added interactive Matplotlib previews with a navigation toolbar.",
+            "Added a warning before discarding unsaved data.",
+            "Added validation with row highlighting.",
         ],
     },
     {
         "version": "Alpha 0.8.0",
         "date": "2026-04-08",
         "entries": [
-            "🌀 Rebranded from StormSnitch to CycloneAid",
-            "🏠 Redesigned home screen with feature-showcase cards",
-            "🎨 Dark-mode UI polish and consistent theming",
+            "Renamed StormSnitch to CycloneAid.",
+            "Redesigned the home screen with feature cards.",
+            "Updated dark-mode styling across the interface.",
         ],
     },
     {
         "version": "Alpha 0.7",
         "date": "2026-04-07",
         "entries": [
-            "📋 Export presets (Forecaster / Media) for layer control",
-            "⚡ Rapid Intensification (dV/dt) analysis plot",
-            "📡 GPX track import with auto-interpolation",
+            "Added Forecaster and Media export presets for layer selection.",
+            "Added the Rapid Intensification wind-change analysis plot.",
+            "Added GPX track imports with automatic interpolation.",
         ],
     },
     {
         "version": "Alpha 0.6",
         "date": "2026-03-28",
         "entries": [
-            "📊 Prognostic intensity timeline chart",
-            "🌊 Landfall detection with nearest-city lookup",
-            "🔄 Row management toolbar (insert, duplicate, reorder)",
+            "Added a prognostic intensity timeline.",
+            "Added landfall detection with nearest-city lookup.",
+            "Added row insertion, duplication, and reordering controls.",
         ],
     },
     {
         "version": "Alpha 0.5",
         "date": "2026-03-15",
         "entries": [
-            "🗺️ Forecast track plot with uncertainty cone",
-            "📈 Wind-speed auto-intensity classification",
-            "💾 CSV import / export",
+            "Added a forecast track plot with a heuristic uncertainty cone.",
+            "Added automatic intensity classification from wind speed.",
+            "Added CSV imports and exports.",
         ],
     },
 ]

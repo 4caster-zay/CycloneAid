@@ -1,10 +1,10 @@
 # Contributing to CycloneAid
 
-CycloneAid is an experimental desktop application for testing and development. Preserve the scientific limitations described in [README.md](README.md); release maturity does not establish forecast skill or calibration.
+Thanks for helping improve CycloneAid. It is an experimental desktop application, so changes should keep the workflow reliable and its [scientific limitations](README.md#scientific-scope-and-limitations) clear.
 
-## Set up a development environment
+## Set up
 
-Use Python 3.12 with Tk support and [uv](https://docs.astral.sh/uv/). On Debian/Ubuntu, install `python3-tk`; the Linux GUI tests also need `xvfb`.
+Use Python 3.12 with Tk support and [uv](https://docs.astral.sh/uv/). On Debian or Ubuntu, install `python3-tk`; Linux GUI tests also need `xvfb`.
 
 ```bash
 git clone https://github.com/4caster-zay/CycloneAid.git
@@ -13,52 +13,50 @@ uv sync --locked --extra desktop
 uv run --no-sync cycloneaid
 ```
 
-Omit `--extra desktop` to test the supported environment without optional desktop dependencies. Full geography needs separately prepared Natural Earth assets; the sample project uses degraded geography and can render without downloading them. See the README for map preparation and diagnostics.
+Omit `--extra desktop` when checking the base installation. Full chart maps need Natural Earth assets; the sample opens without a basemap and can render offline. The README explains map setup and diagnostics.
 
-## Choose and propose work
+## Propose a change
 
-[ROADMAP.md](ROADMAP.md) describes direction and milestone order. GitHub Issues hold actionable work and its status. Before starting, look for an existing issue; use the bug or feature form for a new report. Maintenance and documentation issues can use a blank issue. Each implementation issue should state the problem, intended behavior, acceptance criteria, and dependencies (or “None”).
+Check [existing issues](https://github.com/4caster-zay/CycloneAid/issues) before opening a report. Use the bug or feature form, or a blank issue for maintenance and documentation. Explain the problem, the expected result, how to verify it, and any related work. The [roadmap](ROADMAP.md) describes current priorities.
 
-Use one primary type label: `bug`, `feature`, `maintenance`, or `documentation`. Add one priority: `priority:high` for release blockers or serious regressions, `priority:normal` for planned work, or `priority:low` for later improvements. Use `needs-information` when a report needs input before it can be reproduced or implemented. Milestones group alpha stabilization, repository maintenance, and forecast row generation; avoid duplicating status in a separate project board.
+Use one type label: `bug`, `feature`, `maintenance`, or `documentation`. Add `priority:high` for a release blocker or serious regression, `priority:normal` for planned work, or `priority:low` for later improvements. Use `needs-information` when a report needs more detail. Issues and milestones track progress; a separate project board is not used.
 
-Create a short-lived `codex/` branch from current `main`, such as `codex/forecast-row-generation`. Keep each PR focused on a reviewable behavior or maintenance task and link its issue. Describe the resulting behavior, checks, and remaining limitations. Required CI must pass before merging into `main`; solo maintenance does not require a second reviewer. Resolve conflicts and rerun affected checks before merging.
+Create a short-lived `codex/` branch from the latest `main`, such as `codex/forecast-row-generation`. Keep the PR focused and link its issue. Explain what changed, why, and how it was checked. Required CI must pass before merging; a second reviewer is not required for solo maintenance. Resolve conflicts and rerun the affected checks before merging, then delete the merged branch.
 
-## Verify a change
+## Check your work
 
-Run these from the repository root after syncing the locked environment:
+After syncing the locked environment, run:
 
 ```bash
 uv run --no-sync python -m unittest discover -s tests -v
 uv run --no-sync ruff check .
 uv run --no-sync python tools/check_release.py
-uv export --locked --extra desktop --no-dev --no-emit-project --no-header --output-file /tmp/cycloneaid-requirements.check.txt
 ```
 
-Compare the exported file with `requirements.txt`; they must match exactly. On Windows, choose a temporary output path appropriate to your system. The cross-platform CI performs the same comparison.
-
-For changes to Tkinter or session workflows, also run the Linux GUI suite with a display:
+For Tkinter or session changes, also run the Linux GUI tests with a display:
 
 ```bash
 CYCLONEAID_GUI_TESTS=1 xvfb-run -a uv run --no-sync python -m unittest discover -s tests -v
 ```
 
-Tests normally use synthetic geography and require no map downloads. For changes affecting geography, use the cached-geography and download/offline checks documented in the README and record their results. Verify native Windows/macOS behavior separately when platform behavior changes; passing Linux GUI tests does not establish native GUI compatibility.
+Normal tests use synthetic geography and do not download maps. For geography changes, run the cached-map and download/offline checks in the README and record the results. Native Windows and macOS behavior needs separate desktop checks.
 
-Use `uv build` to verify packaging for release or packaging changes. Follow [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) for release evidence and outstanding native/network checks. Record checks you could not run in the PR with a linked follow-up issue.
+Run `uv build` for packaging or release changes. Check that the wheel and source archive contain the needed files and that the installed application opens the sample. If you cannot run a relevant check, say so in the PR and link a follow-up issue. The [release record](RELEASE_CHECKLIST.md) lists the remaining platform and network checks.
 
-## Preserve compatibility and scientific behavior
+Keep generated charts, build output, logs, caches, and scratch files out of commits. Remove local verification files when finished. Keep useful map assets and development environments locally; they are ignored by Git.
 
-- Retain Python 3.12, Tkinter, supported regional coverage, and the existing chart products unless an issue explicitly changes that contract.
-- Preserve project schema version 1, editable incomplete drafts, provenance, atomic saves, and session undo/redo. Introduce a documented migration before changing the project-file contract.
-- Keep the existing script commands and installed CLI entry points compatible. CSV is forecast interchange; project files are the complete session backup.
-- Keep UTC normalization, finite coordinate/wind validation, wind averaging assumptions, uncertainty qualifications, and estimated-result markings visible. Changes to scientific calculations need explicit rationale and meaningful regression cases.
-- Keep application version metadata in `cycloneaid/metadata.py`. Update the changelog for user-visible changes and use a matching version tag for releases.
+## Compatibility
 
-## Update dependencies
+- Keep Python 3.12, Tkinter, the supported region, and existing chart products unless a proposal explicitly changes them.
+- Preserve project schema 1, incomplete drafts, provenance, atomic saves, and undo/redo. Document a migration before changing the project format.
+- Preserve script commands and installed CLI entry points. CSV exchanges forecast rows; project files back up the complete session.
+- Keep UTC handling, coordinate and wind validation, averaging assumptions, uncertainty qualifications, and estimated-result labels clear. Changes to calculations need a rationale and regression tests that demonstrate the intended result.
 
-`pyproject.toml` declares dependencies; `uv.lock` records the resolved environment. `requirements.txt` is a generated, hashed export with the desktop extra. Do not edit the export by hand or add a separate pip updater.
+## Dependencies
 
-For an intentional update, adjust constraints only when needed, then run:
+`pyproject.toml` declares dependencies, `uv.lock` records their versions, and `requirements.txt` is the hashed desktop export. Do not edit the export by hand.
+
+For an intentional update, adjust constraints only if needed, then run:
 
 ```bash
 uv lock --upgrade-package PACKAGE
@@ -66,10 +64,14 @@ uv sync --locked --extra desktop
 uv export --locked --extra desktop --no-dev --no-emit-project --no-header --output-file requirements.txt
 ```
 
-Replace `PACKAGE` with the dependency name. Review the lock and export together, run the checks above, and test both base and desktop environments through CI. Dependabot proposes grouped Python and GitHub Actions updates monthly. A Python update PR must also contain the regenerated `requirements.txt`; add that export to the PR before merging if the bot did not produce it. Review major-version and scientific-stack changes carefully and merge updates only after required CI passes. No dependency PR merges automatically.
+Replace `PACKAGE` with the dependency name. Review the lock and export together, and check both base and desktop installations through CI. To verify the export without replacing it, write to `requirements.check.txt`, compare it with `requirements.txt`, then delete the check file. CI performs the same comparison.
 
-## Maintain the repository
+Dependabot groups Python and GitHub Actions updates monthly. A Python dependency PR also needs the regenerated requirements export. Review major-version and scientific-library changes carefully. Merge only after CI passes; dependency updates are not merged automatically.
 
-During active testing, triage issues weekly: reproduce tester reports, request missing information, set type/priority/milestone, and identify the next unblocked task. Close resolved reports with a linked fix and verification result. Update the roadmap when direction or milestone completion changes.
+## Releases and maintenance
 
-Monthly, review grouped dependency PRs, stale issues, and release readiness. Keep release evidence tied to a committed revision and successful CI run. Record outstanding native GUI and target-network OSM checks as issues instead of implying they passed. Publish alpha releases only after the release checklist's completion gates are satisfied.
+Keep the version in `cycloneaid/metadata.py` and record user-visible changes in the changelog. Use patch versions for compatible fixes and minor versions for substantial changes during 0.x. Prereleases use `aN`, `bN`, then `rcN`; tags match the version, such as `v0.11.0a1`. Version 1.0 requires a dependable, documented workflow and compatibility policy; scientific calibration remains a separate question.
+
+During active testing, review issues weekly. Reproduce reports, ask for missing details, assign a type, priority, and milestone, and close fixed reports with a link to the change and its verification. Review dependencies and release readiness monthly, and update the roadmap when priorities change.
+
+Before publishing, record the tested commit, CI results, package checksums, and known limitations. Keep unfinished native-desktop and OSM-network checks open and disclose them in the release notes. Do not describe a check as passed until its result has been recorded.
