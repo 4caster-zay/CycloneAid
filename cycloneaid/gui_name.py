@@ -46,6 +46,8 @@ class NameEditingMixin:
         return "break"
 
     def _name_focus_out(self, event=None):
+        if self._name_entry is not None and self._name_entry.focus_get() is self._name_entry:
+            return
         self._flush_name_edit()
         self._update_name_placeholder()
 
@@ -58,7 +60,7 @@ class NameEditingMixin:
         if text == self.controller.session.settings.storm_name:
             self._notify_name_status()
             return False
-        self._commit(settings=replace(self.controller.session.settings, storm_name=text))
+        self._commit(settings=replace(self.controller.session.settings, storm_name=text), infer_issue_time=False)
         self._notify_name_status()
         return True
 

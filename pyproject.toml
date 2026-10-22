@@ -32,6 +32,9 @@ py-modules = ["storm_tracker", "storm_tracker_gui", "storm_prognostic", "storm_R
 [tool.setuptools.dynamic]
 version = {attr = "cycloneaid.metadata.__version__"}
 
+[tool.setuptools.package-data]
+cycloneaid = ["data/*.json"]
+
 [dependency-groups]
 dev = ["ruff>=0.12,<1"]
 

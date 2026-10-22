@@ -167,6 +167,10 @@ class TkSessionTests(unittest.TestCase):
             wait(lambda: product in screen._previews)
         path=Path(self.tmp.name)/'saved.png'
         revision=screen.controller.session.revision
+        axes=screen._previews['track'][0].axes[0]
+        left,right=axes.get_xlim()
+        viewport=(left+(right-left)*.1,right-(right-left)*.1)
+        axes.set_xlim(viewport)
         with patch('cycloneaid.gui_session.filedialog.asksaveasfilename',return_value=str(path)):
             screen.save_track()
         row=screen.controller.session.rows[0]
@@ -187,6 +191,7 @@ class TkSessionTests(unittest.TestCase):
             metadata=json.loads(image.info['Description'])
             self.assertEqual(metadata['revision'],revision)
             self.assertEqual(metadata['points'][0]['lat'],10)
+            self.assertEqual(metadata['view_state'][0][0],list(viewport))
 
     def test_optional_map_reuses_real_markers(self):
         try:
@@ -242,30 +247,112 @@ class TkSessionTests(unittest.TestCase):
                             self.assertFalse(screen.renderer.busy,'Preview worker timed out')
                             self.assertFalse(errors.call_args_list,str(errors.call_args_list))
                             self.assertIn(product,screen._previews)
-                            figure,window,_=screen._previews[product]
-                            window.geometry('800x550')
+                            figure,pane,_=screen._previews[product]
+                            self.assertIs(pane.master,screen._output_hosts[product])
+                            screen.output_notebook.select(screen._output_pages[product])
+                            self.root.geometry('1000x650')
                             self.root.update()
-                            window.geometry('1100x750')
+                            self.root.geometry('1366x768')
                             canvas=figure.canvas
                             canvas.draw_idle()
                             # Exercise closure while a Tk canvas redraw is queued.
                             if cycle==2:
-                                window.destroy()
+                                pane.destroy()
                                 self.assertIsNone(canvas._idle_draw_id)
                             self.root.update()
                             self.assertFalse(self.callback_errors,str(self.callback_errors))
 
-    def test_failed_preview_replacement_preserves_existing_window_and_releases_figure(self):
+    def test_failed_preview_replacement_preserves_existing_pane_and_releases_figure(self):
         import matplotlib.pyplot as plt
         screen=self.screen
         previous=plt.figure()
         screen._show_preview(previous,'ri',0)
         self.root.update()
-        window=screen._previews['ri'][1]
+        pane=screen._previews['ri'][1]
         replacement=plt.figure()
         with patch('matplotlib.backends.backend_tkagg.FigureCanvasTkAgg',side_effect=RuntimeError('canvas init failed')):
             with self.assertRaisesRegex(RuntimeError,'canvas init failed'):
                 screen._show_preview(replacement,'ri',0)
-        self.assertTrue(window.winfo_exists())
+        self.assertTrue(pane.winfo_exists())
         self.assertIs(screen._previews['ri'][0],previous)
         self.assertNotIn(replacement.number,plt.get_fignums())
+        self.assertEqual(screen._output_state_kind['ri'],'failed')
+        self.assertIn('Previous preview remains available',screen._output_states['ri'].get())
+
+    def test_output_tabs_are_on_demand_and_show_explicit_states(self):
+        import matplotlib.pyplot as plt
+        screen=self.screen
+        tabs=screen.output_notebook
+        self.assertEqual([tabs.tab(tab,'text') for tab in tabs.tabs()],
+                         ['Map','Track','Intensity','Wind change'])
+        self.assertEqual(tabs.select(),str(screen.map_frame))
+        with patch.object(screen,'_start_plot') as start_plot:
+            for tab in tabs.tabs():
+                tabs.select(tab)
+                self.root.update()
+            start_plot.assert_not_called()
+        self.assertEqual(screen._output_state_kind,{'track':'empty','prognostic':'empty','ri':'empty'})
+        screen._output_render_started('track')
+        self.assertEqual(screen._output_state_kind['track'],'rendering')
+        figure=plt.figure()
+        screen._show_preview(figure,'track',screen.controller.session.revision)
+        self.assertEqual(screen._output_state_kind['track'],'current')
+        self.assertEqual(screen._output_buttons['track'][0]['text'],'Refresh')
+        row=point_to_row(point())
+        screen._commit(rows=[row])
+        self.assertEqual(screen._output_state_kind['track'],'stale')
+        self.assertTrue(screen._previews['track'][1].winfo_exists())
+        screen._output_render_finished('track',error='Test failure')
+        self.assertEqual(screen._output_state_kind['track'],'failed')
+        self.assertIs(screen._previews['track'][0],figure)
+
+    def test_embedded_toolbar_save_uses_current_snapshot_export(self):
+        import matplotlib.pyplot as plt
+        screen=self.screen
+        screen._show_preview(plt.figure(),'track',screen.controller.session.revision)
+        with patch.object(screen,'_start_plot') as start_plot:
+            screen._previews['track'][1].toolbar.save_figure()
+        start_plot.assert_called_once_with('track',True)
+
+    def test_embedded_toolbar_icons_follow_application_theme(self):
+        import matplotlib.pyplot as plt
+        from cycloneaid.ui_theme import apply_theme
+        screen=self.screen
+        screen._show_preview(plt.figure(),'track',screen.controller.session.revision)
+        toolbar=screen._previews['track'][1].toolbar
+        home=toolbar._buttons['Home']
+        for theme in ('Sky Light','Typhoon Dark'):
+            apply_theme(self.root,theme,persist=False)
+            self.root.update()
+            expected=home._ntimage_alt if theme=='Typhoon Dark' else home._ntimage
+            self.assertEqual(str(home['image']),str(expected))
+
+    def test_preview_replacement_cancels_queued_canvas_and_closes_old_figure(self):
+        import matplotlib.pyplot as plt
+        screen=self.screen
+        first=plt.figure()
+        screen._show_preview(first,'ri',screen.controller.session.revision)
+        old_pane=screen._previews['ri'][1]
+        old_canvas=first.canvas
+        old_canvas.draw_idle()
+        second=plt.figure()
+        screen._show_preview(second,'ri',screen.controller.session.revision)
+        self.assertIsNone(old_canvas._idle_draw_id)
+        self.assertFalse(old_pane.winfo_exists())
+        self.assertNotIn(first.number,plt.get_fignums())
+        self.assertIs(screen._previews['ri'][0],second)
+        self.root.update()
+
+    def test_clear_outputs_disposes_panes_and_resets_states(self):
+        import matplotlib.pyplot as plt
+        screen=self.screen
+        for product in ('track','prognostic','ri'):
+            screen._show_preview(plt.figure(),product,screen.controller.session.revision)
+        panes=[pane for _,pane,_ in screen._previews.values()]
+        with patch.object(screen,'_start_plot') as start_plot:
+            screen._clear_outputs()
+        start_plot.assert_not_called()
+        self.assertEqual(screen._previews,{})
+        self.assertFalse(any(pane.winfo_exists() for pane in panes))
+        self.assertTrue(all(state=='empty' for state in screen._output_state_kind.values()))
+        self.assertTrue(all(buttons[0]['text']=='Preview' for buttons in screen._output_buttons.values()))

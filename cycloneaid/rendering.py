@@ -11,6 +11,7 @@ import tempfile
 import traceback
 
 from cycloneaid.model import utc_timestamp
+from cycloneaid.metadata import display_storm_name
 from cycloneaid.session import SessionSettings, validate_session
 
 
@@ -58,6 +59,7 @@ def build_figure(request):
     from export_preset import get_preset
     from validation import validate_forecast_points
     settings, points = request.settings, request.points
+    title = display_storm_name(settings.storm_name)
     issue = utc_timestamp(settings.issue_time) if settings.issue_time else points[0].time
     events = ()
     if settings.geography_mode == "full" and request.product != "ri":
@@ -70,15 +72,15 @@ def build_figure(request):
             has_interpolated=any(p.is_interpolated for p in points),
             forecaster_confidence=settings.confidence,
             validation_result=validate_forecast_points(points)))
-        figure = plot_storm_track(points, settings.storm_name, issue, settings.confidence, context,
+        figure = plot_storm_track(points, title, issue, settings.confidence, context,
                                   geography_mode=settings.geography_mode, landfall_events=events)
     elif request.product == "prognostic":
         from storm_prognostic import plot_storm_prognostic
-        figure = plot_storm_prognostic(points, settings.storm_name, issue,
+        figure = plot_storm_prognostic(points, title, issue,
                                       geography_mode=settings.geography_mode, landfall_events=events)
     else:
         from storm_RI_plot import plot_ri_from_forecast_points
-        figure = plot_ri_from_forecast_points(points, storm_name=settings.storm_name)
+        figure = plot_ri_from_forecast_points(points, storm_name=title)
     source = f"Source: {settings.source} | Wind averaging: {settings.wind_averaging_period} | Issue: {issue:%Y-%m-%d %H:%MZ}"
     overrides = [p.override_reason for p in points if p.override_reason]
     if settings.import_notes:

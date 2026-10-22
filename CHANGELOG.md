@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11.0a1 — 2026-10-22 (workspace alpha)
+
+- Open directly into a forecast workspace with project actions, editable session properties, grouped row/import controls, and embedded Map/Track/Intensity/Wind change tabs.
+- Add semantic Sky/Typhoon styling, a keyboard-accessible appearance switch, persistent local preferences, consistent hover/focus/disabled states, and themed dialogs/toolbars.
+- Keep blank storm-name drafts editable, commit names as one undoable action, include pending edits in save/recovery, and display Untitled storm only in unnamed chart titles.
+- Show explicit chart-map readiness, one-time background setup, retries, and independent OSM availability; preserve stored project modes and later operator choices.
+- Fit complete preview graphics to the pane, preserve focus during render completion, and protect new projects from previous jobs' results. Retain full-resolution snapshot exports and figure/callback cleanup.
+- Add keyboard cell navigation, project-safe history reset, responsive pane sizing, and a packaged sample available in installed builds.
+
 ## 0.10.0a2 — 2026-10-22 (alpha testing release)
 
 - Generate timestamp-only forecast rows from an explicit UTC start, interval, and horizon; preview before appending as one undoable action, preserving generated timestamp provenance without labeling forecast values interpolated.

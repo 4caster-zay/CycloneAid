@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from cycloneaid.generation import MAX_GENERATED_ROWS, generate_rows, preview_generation, suggest_start_time
+from cycloneaid.ui_theme import style_widget_tree
 
 
 class GenerateRowsDialog(tk.Toplevel):
@@ -34,7 +35,7 @@ class GenerateRowsDialog(tk.Toplevel):
             row=4, column=0, columnspan=2, padx=12, pady=6, sticky="w")
         ttk.Label(self, textvariable=self.preview_var, justify="left").grid(
             row=5, column=0, columnspan=2, padx=12, pady=6, sticky="w")
-        ttk.Label(self, textvariable=self.error_var, foreground="#b00020", wraplength=420).grid(
+        ttk.Label(self, textvariable=self.error_var, style="Error.TLabel", wraplength=420).grid(
             row=6, column=0, columnspan=2, padx=12, sticky="w")
         buttons = ttk.Frame(self)
         buttons.grid(row=7, column=0, columnspan=2, padx=12, pady=12, sticky="e")
@@ -47,6 +48,7 @@ class GenerateRowsDialog(tk.Toplevel):
         self._interval_changed()
         self.bind("<Escape>", lambda event: self.destroy())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
+        style_widget_tree(self)
         self.grab_set()
         self.start_entry.focus_set()
 

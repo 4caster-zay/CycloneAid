@@ -9,31 +9,25 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import pandas as pd
 from cycloneaid.model import derive_intensity, utc_timestamp
 from cycloneaid.session import (ForecastRow, SessionController, parse_row, validate_session,
-                                save_project, load_project, recovery_path)
+                                ForecastSession, SessionSettings, save_project, load_project, recovery_path)
 from cycloneaid.imports import read_tracks, prepare_track
 from cycloneaid.rendering import RenderCoordinator, RenderRequest
 from cycloneaid.diagnostics import error_message
 from validation import validate_forecast_points
+from cycloneaid.gui_name import NameEditingMixin
+from cycloneaid.gui_maps import MapReadinessMixin
+from cycloneaid.gui_outputs import OutputTabsMixin
+from cycloneaid.ui_theme import style_widget_tree
 
 
-class _PreviewWindow(tk.Toplevel):
-    figure_canvas = None
-
-    def destroy(self):
-        if self.figure_canvas is not None:
-            canvas = self.figure_canvas
-            # Embedded canvases have no Tk FigureManager to cancel these jobs.
-            for name in ('_idle_draw_id', '_event_loop_id'):
-                identifier = getattr(canvas, name, None)
-                if identifier is not None:
-                    canvas.get_tk_widget().after_cancel(identifier)
-                    setattr(canvas, name, None)
-        super().destroy()
-
-
-class SessionScreenMixin:
+class SessionScreenMixin(NameEditingMixin, MapReadinessMixin, OutputTabsMixin):
     def _init_session(self):
-        self.controller = SessionController()
+        self.controller = SessionController(ForecastSession(settings=SessionSettings(storm_name="")))
+        self._project_generation = 0
+        self._chart_job_project = None
+        self._last_geography_mode = self.controller.session.settings.geography_mode
+        self._init_name_editing()
+        self._init_map_readiness()
         self.renderer = RenderCoordinator()
         self._displayed_rows = {}
         self._displayed_order = ()
@@ -51,10 +45,10 @@ class SessionScreenMixin:
         self._timers = []
 
     def _start_session(self):
-        for variable in (self.storm_name_var, self.forecaster_confidence_var, self.export_preset_var):
+        for variable in (self.forecaster_confidence_var, self.export_preset_var):
             variable.trace_add("write", self._topbar_changed)
         root = self.winfo_toplevel()
-        for sequence, action in (("<Control-s>", self.save_session), ("<Control-o>", self.open_session),
+        for sequence, action in (("<Control-n>", self.new_session), ("<Control-s>", self.save_session), ("<Control-o>", self.open_session),
                                  ("<Control-z>", self.undo), ("<Control-y>", self.redo),
                                  ("<Delete>", self._on_delete_key)):
             callback = lambda event, fn=action: fn(event)
@@ -71,9 +65,8 @@ class SessionScreenMixin:
         if self._refreshing:
             return
         settings = replace(self.controller.session.settings,
-                           storm_name=self.storm_name_var.get().strip() or "CycloneAid",
                            confidence=self.forecaster_confidence_var.get(), preset=self.export_preset_var.get())
-        self._commit(settings=settings)
+        self._commit(settings=settings, infer_issue_time=False)
 
     def _commit(self, *, rows=None, settings=None, fit=False, infer_issue_time=True):
         if self.controller.commit(rows=rows, settings=settings, infer_issue_time=infer_issue_time):
@@ -81,10 +74,13 @@ class SessionScreenMixin:
 
     def _session_changed(self, fit=False):
         session = self.controller.session
+        if session.settings.geography_mode == 'degraded' and self._last_geography_mode != 'degraded':
+            self._map_asset_enable_requested = False
+        self._last_geography_mode = session.settings.geography_mode
         self.renderer.invalidate(session.revision)
         self._refreshing = True
         try:
-            self.storm_name_var.set(session.settings.storm_name)
+            self._sync_name_from_session()
             self.forecaster_confidence_var.set(session.settings.confidence)
             self.export_preset_var.set(session.settings.preset)
         finally:
@@ -92,9 +88,9 @@ class SessionScreenMixin:
         self._display_session()
         self._update_action_buttons()
         self._sync_map(fit=fit)
-        for product, (figure, window, revision) in self._previews.items():
-            if revision != session.revision:
-                window.title(f"{product.title()} Preview — previous session state")
+        self._mark_outputs_stale()
+        self._refresh_map_readiness()
+        self._update_project_status()
 
     def _display_session(self):
         session = self.controller.session
@@ -108,11 +104,17 @@ class SessionScreenMixin:
         for row in session.rows:
             if row != self._displayed_rows.get(row.row_id) or getattr(self, "_displayed_issue", None) != session.settings.issue_time:
                 values = list(row.values)
+                # Timestamp readability must not depend on other draft cells
+                # already having coordinates and wind values.
+                try:
+                    timestamp = utc_timestamp(row.values[0])
+                    if not pd.isna(timestamp):
+                        values[0] = timestamp.tz_localize(None).isoformat(sep=" ")
+                        values[1] = f"{(timestamp-issue).total_seconds()/3600:g}" if not pd.isna(issue) else ""
+                except (TypeError, ValueError, OverflowError):
+                    pass
                 try:
                     point = parse_row(row)
-                    if not pd.isna(point.time):
-                        values[0] = point.time.tz_localize(None).isoformat(sep=" ")
-                        values[1] = f"{(point.time-issue).total_seconds()/3600:g}" if not pd.isna(issue) else ""
                     values[3] = f"{point.lon:g}"
                     result = validate_forecast_points([point])
                     tag = 'invalid' if result.has_errors() else ('warning' if result.has_warnings() else 'normal')
@@ -147,14 +149,34 @@ class SessionScreenMixin:
         valid = self._is_table_valid() and not self.renderer.busy
         for button in self._action_btns:
             button.config(state=tk.NORMAL if valid else tk.DISABLED)
+        if hasattr(self, '_validation_var'):
+            result = self._validate_data()
+            text = (f"{len(result.hard_errors)} issue(s) · review forecast" if result.has_errors() else
+                    f"{len(result.soft_warnings)} note(s) · ready to preview" if result.has_warnings() else
+                    "Forecast ready")
+            if not self.controller.session.rows:
+                text = "Add, generate, or import forecast rows to begin"
+            self._validation_var.set(text)
 
-    def _set_status(self, text, color="#aaa"):
+    def _set_status(self, text, color=None):
         if hasattr(self, '_status_lbl'):
-            self._status_lbl.config(text=text, fg=color)
+            options = dict(text=text)
+            if color and not isinstance(self._status_lbl, ttk.Label):
+                options['fg'] = color
+            self._status_lbl.config(**options)
 
     def _set_buttons_loading(self, loading, message=""):
         self._update_action_buttons()
         self._set_status(message if loading else "Ready")
+        if hasattr(self, '_render_progress'):
+            if loading:
+                self._render_progress.pack(side=tk.LEFT, padx=8, after=self._status_lbl)
+                self._render_progress.start(15)
+            else:
+                self._render_progress.stop()
+                self._render_progress.pack_forget()
+        if hasattr(self, '_map_asset_job_id'):
+            self._refresh_map_readiness()
 
     def _default_row(self):
         return ["", "0", "", "", "", "False", "Tropical", "TD", "False"]
@@ -215,16 +237,24 @@ class SessionScreenMixin:
             self._commit(rows=[])
 
     def undo(self, event=None):
+        if event is not None and self._text_input_has_focus() and self.focus_get() is not self._name_entry:
+            return
+        self._flush_name_edit()
         if self.cell_editor and self.cell_editor.frame is not None:
             return
         if self.controller.undo():
+            self._sync_name_from_session(force=True)
             self._session_changed()
         return 'break'
 
     def redo(self, event=None):
+        if event is not None and self._text_input_has_focus() and self.focus_get() is not self._name_entry:
+            return
+        self._flush_name_edit()
         if self.cell_editor and self.cell_editor.frame is not None:
             return
         if self.controller.redo():
+            self._sync_name_from_session(force=True)
             self._session_changed()
         return 'break'
 
@@ -235,6 +265,15 @@ class SessionScreenMixin:
         if index is None:
             return
         row = rows[index]
+        if str(new_value) == row.values[col_idx]:
+            return
+        if col_idx == 0:
+            try:
+                before, after = utc_timestamp(row.values[0]), utc_timestamp(new_value)
+                if not pd.isna(before) and before == after:
+                    return
+            except (TypeError, ValueError, OverflowError):
+                pass
         values = list(row.values)
         reason, origin = row.override_reason, row.time_origin
         if col_idx == 7:
@@ -354,6 +393,7 @@ class SessionScreenMixin:
         self._fit_pending = False
 
     def _import(self, extension):
+        self._flush_pending_edits()
         types = {"csv": [("CSV files", "*.csv")], "gpx": [("GPX files", "*.gpx")],
                  "kml": [("KML/KMZ files", "*.kml *.kmz")]}
         path = filedialog.askopenfilename(filetypes=types[extension])
@@ -392,6 +432,8 @@ class SessionScreenMixin:
                 "Imported intensity override", f"Row {i}: reason for {point.intensity_class} at {point.wind_kt:g} kt:", parent=self))
             settings = replace(self.controller.session.settings, issue_time=parse_row(rows[0]).time.isoformat(),
                                import_notes="; ".join((*notes, *warnings)))
+            self._close_session_details()
+            self._project_generation += 1
             self._commit(rows=rows, settings=settings, fit=True)
             if warnings or notes:
                 messagebox.showwarning("Import notes", "\n".join((*notes, *warnings)))
@@ -408,6 +450,7 @@ class SessionScreenMixin:
         self._import("kml")
 
     def export_csv(self):
+        self._flush_pending_edits()
         points, result = self._validated()
         if result.has_errors():
             self._show_validation_dialog(result)
@@ -422,6 +465,7 @@ class SessionScreenMixin:
                 messagebox.showerror("Export Error", str(exc))
 
     def save_session(self, event=None):
+        self._flush_pending_edits()
         path = self._project_path or filedialog.asksaveasfilename(
             defaultextension=".cycloneaid.json", filetypes=[("CycloneAid project", "*.cycloneaid.json"), ("JSON", "*.json")])
         if not path:
@@ -430,6 +474,7 @@ class SessionScreenMixin:
             save_project(self.controller.session, path)
             self._project_path = path
             self.controller.mark_saved()
+            self._update_project_status()
             recovery_path().unlink(missing_ok=True)
             self._set_status(f"Project saved: {Path(path).name}")
             return True
@@ -444,25 +489,76 @@ class SessionScreenMixin:
             self._project_path = previous
 
     def open_session(self, event=None):
+        self._flush_pending_edits()
         path = filedialog.askopenfilename(filetypes=[("CycloneAid project", "*.json")])
         if not path:
             return
         try:
             session = load_project(path)
-            self._commit(rows=session.rows, settings=session.settings, fit=True)
-            self._project_path = path
-            self.controller.mark_saved()
+            if self._confirm_leave():
+                self._replace_project(session, path)
+                self._set_status(f"Opened {Path(path).name}")
         except Exception as exc:
-            messagebox.showerror("Open project", str(exc))
+            messagebox.showerror("Open project", str(exc), parent=self)
+
+    def new_session(self, event=None):
+        if self._confirm_leave():
+            self._replace_project(ForecastSession(settings=SessionSettings(storm_name="")))
+            self._set_status("New forecast project")
+
+    def open_sample(self):
+        from importlib.resources import files, as_file
+        try:
+            with as_file(files('cycloneaid').joinpath('data/sample.cycloneaid.json')) as path:
+                session = load_project(path)
+            if self._confirm_leave():
+                self._replace_project(session)
+                self._set_status("Opened synthetic TEST PALAU sample")
+        except Exception as exc:
+            messagebox.showerror("Open sample", str(exc), parent=self)
+
+    def _replace_project(self, session, path=None):
+        self._close_session_details()
+        self._project_generation += 1
+        self._clear_outputs()
+        self.controller.reset(session)
+        self._project_path = str(path) if path is not None else None
+        self._discard = False
+        self._sync_name_from_session(force=True)
+        self._session_changed(fit=True)
+
+    def _update_project_status(self):
+        if not hasattr(self, '_project_status_var'):
+            return
+        filename = Path(self._project_path).name if self._project_path else 'Untitled project'
+        dirty = self.controller.dirty or self._has_pending_name_edit()
+        status = 'Unsaved changes' if dirty else 'Saved' if self._project_path else 'Not saved'
+        self._project_status_var.set(f"{filename} · {status} · {len(self.controller.session.rows)} rows")
+
+    def _text_input_has_focus(self):
+        focus = self.focus_get()
+        return isinstance(focus, (tk.Entry, ttk.Entry, tk.Text, ttk.Combobox, tk.Spinbox, ttk.Spinbox))
+
+    def _flush_pending_edits(self):
+        editor = getattr(self, 'cell_editor', None)
+        if editor is not None and editor.frame is not None:
+            editor.commit()
+        self._flush_name_edit()
+
+    def _recovery_session(self):
+        session = self.controller.session
+        if self._has_pending_name_edit():
+            session = replace(session, settings=replace(session.settings, storm_name=self.storm_name_var.get()))
+        return session
 
     def _autosave(self):
         identifier = getattr(self, '_autosave_after', None)
         if identifier is not None:
             self.after_cancel(identifier)
             self._autosave_after = None
-        if self.controller.dirty:
+        if self.controller.dirty or self._has_pending_name_edit():
             try:
-                save_project(self.controller.session, recovery_path())
+                save_project(self._recovery_session(), recovery_path())
             except Exception as exc:
                 self._set_status(f"Recovery save failed: {exc}", '#ff8080')
         self._autosave_after = self.after(30000, self._autosave)
@@ -473,34 +569,59 @@ class SessionScreenMixin:
             try:
                 session = load_project(path)
                 if messagebox.askyesno("Recover session", "Restore the recovery copy from the previous session?"):
-                    self._commit(rows=session.rows, settings=session.settings, fit=True)
+                    self._close_session_details()
+                    self._project_generation += 1
+                    self._name_pending = False
+                    self._commit(rows=session.rows, settings=session.settings, fit=True, infer_issue_time=False)
+                    self._sync_name_from_session(force=True)
                 else:
                     path.unlink(missing_ok=True)
             except Exception as exc:
                 messagebox.showerror("Recovery", str(exc))
 
+    def _close_session_details(self):
+        window = getattr(self, '_settings_window', None)
+        if window is not None and window.winfo_exists():
+            window.destroy()
+        self._settings_window = None
+
     def session_settings(self):
+        self._flush_pending_edits()
+        previous = getattr(self, '_settings_window', None)
+        if previous is not None and previous.winfo_exists():
+            previous.lift()
+            return
         window = tk.Toplevel(self)
-        window.title("Session settings")
+        self._settings_window = window
+        window.title("Session details")
         values = {}
         settings = self.controller.session.settings
+        project_generation = self._project_generation
         for i, (field, label) in enumerate((("issue_time", "Issue time (UTC)"), ("source", "Source agency"),
                                            ("wind_averaging_period", "Wind averaging period"),
-                                           ("geography_mode", "Geography (full/degraded)"))):
-            tk.Label(window, text=label).grid(row=i, column=0, padx=10, pady=6, sticky='w')
+                                           ("geography_mode", "Chart maps"))):
+            ttk.Label(window, text=label).grid(row=i, column=0, padx=14, pady=8, sticky='w')
             variable = tk.StringVar(value=getattr(settings, field))
             values[field] = variable
             if field == "geography_mode":
-                widget = ttk.Combobox(window, textvariable=variable, values=("full", "degraded"), state="readonly")
+                variable.set("Full maps" if settings.geography_mode == 'full' else "Without basemap")
+                widget = ttk.Combobox(window, textvariable=variable,
+                                     values=("Full maps", "Without basemap"), state="readonly")
             else:
-                widget = tk.Entry(window, textvariable=variable, width=36)
+                widget = ttk.Entry(window, textvariable=variable, width=36)
             widget.grid(row=i, column=1, padx=10, pady=6)
         mask_qc = tk.BooleanVar(value=settings.landmask_qc)
-        tk.Checkbutton(window, text="Optional land-mask point QC (loads ~1 GB)", variable=mask_qc).grid(
+        ttk.Checkbutton(window, text="Optional land-mask point QC (loads ~1 GB)", variable=mask_qc).grid(
             row=4, column=0, columnspan=2, padx=10, pady=6)
         def save():
+            if project_generation != self._project_generation:
+                self._close_session_details()
+                return
             try:
                 changes = {field: var.get().strip() for field, var in values.items()}
+                changes['geography_mode'] = {'Full maps': 'full', 'Without basemap': 'degraded'}[changes['geography_mode']]
+                if changes['geography_mode'] == 'degraded':
+                    self._map_asset_enable_requested = False
                 if changes['issue_time']:
                     timestamp = utc_timestamp(changes['issue_time'])
                     if pd.isna(timestamp):
@@ -508,31 +629,24 @@ class SessionScreenMixin:
                     changes['issue_time'] = timestamp.isoformat()
                 for field in ('source', 'wind_averaging_period'):
                     changes[field] = changes[field] or 'Unknown'
-                self._commit(settings=replace(settings, landmask_qc=mask_qc.get(), **changes))
+                self._commit(settings=replace(self.controller.session.settings, landmask_qc=mask_qc.get(), **changes),
+                             infer_issue_time=False)
                 window.destroy()
             except Exception as exc:
                 messagebox.showerror("Session settings", str(exc), parent=window)
-        tk.Button(window, text="Apply", command=save).grid(row=5, column=1, pady=10)
+        ttk.Button(window, text="Apply", command=save, style="Accent.TButton").grid(row=5, column=1, padx=10, pady=14, sticky='e')
         window.transient(self.winfo_toplevel())
-
-    def prepare_assets(self):
-        from cycloneaid.geography import geography_readiness
-        missing = geography_readiness()
-        if not missing:
-            messagebox.showinfo("Map assets", "All required Natural Earth assets are cached. OSM tiles still require connectivity.")
-            return
-        if messagebox.askyesno("Prepare map assets", f"Download {len(missing)} missing Natural Earth datasets for offline charts?"):
-            try:
-                self.renderer.submit("assets")
-                self._set_buttons_loading(True, "Preparing map assets…")
-            except Exception as exc:
-                messagebox.showerror("Map assets", str(exc))
+        style_widget_tree(window)
 
     def _start_plot(self, product, save=False):
+        self._flush_pending_edits()
         try:
             request = RenderRequest.from_session(self.controller.session, product)
-            path = None
-            view_state = ()
+            if product != 'ri' and request.settings.geography_mode == 'full':
+                from cycloneaid.geography import geography_readiness
+                if geography_readiness():
+                    raise ValueError("Map setup needed. Choose Prepare maps, or explicitly continue without basemap.")
+            path, view_state = None, ()
             if save:
                 path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG image", "*.png")])
                 if not path:
@@ -540,10 +654,14 @@ class SessionScreenMixin:
                 previous = self._previews.get(product)
                 if previous and previous[2] == request.revision:
                     view_state = tuple((ax.get_xlim(), ax.get_ylim()) for ax in previous[0].axes)
-            self.renderer.submit(request, path, view_state)
+            job_id = self.renderer.submit(request, path, view_state)
+            self._chart_job_project = (job_id, self._project_generation)
+            self._output_render_started(product, save=save)
             self._set_buttons_loading(True, f"{'Exporting' if save else 'Rendering'} {product}…")
         except Exception as exc:
-            messagebox.showerror("Chart error", error_message(f'{product} request', exc))
+            self._output_render_finished(product, error=str(exc))
+            self._set_status("Review chart tab for details")
+            error_message(f'{product} request', exc)
 
     def preview_track(self):
         self._start_plot('track')
@@ -566,29 +684,47 @@ class SessionScreenMixin:
     def _poll_renderer(self):
         result = self.renderer.poll()
         if result is not None:
+            if self._handle_map_asset_result(result):
+                self._poll_after = self.after(100, self._poll_renderer)
+                return
             self._set_buttons_loading(False)
+            owner = getattr(self, '_chart_job_project', None)
+            if owner is not None and owner[0] == result.job_id:
+                self._chart_job_project = None
+                if owner[1] != self._project_generation:
+                    if result.error:
+                        error_message(f'Previous project {result.product} render', result.error, result.detail)
+                        self._set_status("Previous project render failed; current project was kept")
+                    elif result.path:
+                        self._set_status(f"Saved earlier project snapshot: {Path(result.path).name}")
+                    else:
+                        self._set_status("Previous project preview discarded")
+                    self._poll_after = self.after(100, self._poll_renderer)
+                    return
             if result.error:
-                messagebox.showerror("Chart error", error_message(
-                    f'{result.product} render (revision {result.revision})', result.error, result.detail))
-            elif result.product == 'assets':
-                self._set_status("Map assets ready for offline charts")
+                diagnostic = error_message(f'{result.product} render (revision {result.revision})',
+                                           result.error, result.detail)
+                self._output_render_finished(result.product, error=diagnostic)
+                self._set_status(f"{result.product.title()} failed — see chart tab")
             elif result.path:
-                self._set_status(f"Saved {result.product}: {result.path}")
+                self._output_render_finished(result.product, exported=True)
+                self._set_status(f"Saved {Path(result.path).name}")
             elif result.revision == self.controller.session.revision:
                 figure = None
                 try:
-                    figure = pickle.loads(result.figure_bytes)  # Same-build, local child-process IPC only.
+                    figure = pickle.loads(result.figure_bytes)
                     self._show_preview(figure, result.product, result.revision)
-                    validation = self._validate_data()
-                    if validation.has_warnings():
-                        self._show_validation_dialog(validation)
+                    self._set_status("Preview ready")
                 except Exception as exc:
                     if figure is not None and self._previews.get(result.product, (None,))[0] is not figure:
                         import matplotlib.pyplot as plt
                         plt.close(figure)
-                    messagebox.showerror("Preview error", error_message(f'{result.product} preview', exc))
+                    diagnostic = error_message(f'{result.product} preview', exc)
+                    self._output_render_finished(result.product, error=diagnostic)
+                    self._set_status("Preview failed — see chart tab")
             else:
-                self._set_status("Obsolete preview discarded; generate a preview of the edited forecast")
+                self._output_render_finished(result.product, obsolete=True)
+                self._set_status("Obsolete preview discarded; refresh the edited forecast")
         self._poll_after = self.after(100, self._poll_renderer)
 
     def _show_validation_dialog(self, result, is_warning=False):
@@ -598,41 +734,8 @@ class SessionScreenMixin:
         elif text:
             messagebox.showwarning("Forecast notes", text)
 
-    def _show_preview(self, figure, product, revision):
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-        window = None
-        try:
-            window = _PreviewWindow(self)
-            window.title(f"{product.title()} Preview — {self.controller.session.settings.storm_name}")
-            window.geometry('1000x750')
-            self._theme().apply_dark_theme(window)
-            canvas = FigureCanvasTkAgg(figure, master=window)
-            window.figure_canvas = canvas
-            screen = self
-            class Toolbar(NavigationToolbar2Tk):
-                def save_figure(self, *args):
-                    screen._start_plot(product, save=True)
-            toolbar = Toolbar(canvas, window, pack_toolbar=False)
-            toolbar.pack(side=tk.BOTTOM, fill=tk.X)
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-            canvas.draw_idle()
-        except Exception:
-            if window is not None:
-                window.destroy()
-            plt.close(figure)
-            raise
-        if product in self._previews:
-            self._previews[product][1].destroy()
-        self._previews[product] = (figure, window, revision)
-        def closed(event):
-            if event.widget is window:
-                plt.close(figure)
-                if self._previews.get(product, (None,))[0] is figure:
-                    self._previews.pop(product, None)
-        window.bind('<Destroy>', closed)
-
     def _confirm_leave(self):
+        self._flush_pending_edits()
         if self.controller.dirty:
             answer = messagebox.askyesnocancel("Unsaved project", "Save your project before leaving?")
             if answer is None or (answer and not self.save_session()):
@@ -655,15 +758,18 @@ class SessionScreenMixin:
         if self._closing:
             return
         self._closing = True
-        if self.controller.dirty and not self._discard:
+        for name in ('_render_progress', '_map_preparation_progress'):
+            progress = getattr(self, name, None)
+            if progress is not None:
+                progress.stop()
+        if (self.controller.dirty or self._has_pending_name_edit()) and not self._discard:
             try:
-                save_project(self.controller.session, recovery_path())
+                save_project(self._recovery_session(), recovery_path())
             except OSError:
                 pass
         self.renderer.close()
-        for figure, window, revision in list(self._previews.values()):
-            window.destroy()
-        for name in ('_map_after', '_poll_after', '_autosave_after', '_recovery_after', '_clock_after'):
+        self._clear_outputs()
+        for name in ('_map_after', '_poll_after', '_autosave_after', '_recovery_after', '_clock_after', '_split_after'):
             identifier = getattr(self, name, None)
             if identifier is not None:
                 self.after_cancel(identifier)

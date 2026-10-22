@@ -27,6 +27,12 @@ Generate timestamps from an explicit UTC start, interval (6 hours by default), a
 
 Gate: pure generation and session/GUI regressions pass, incomplete drafts cannot render, completed drafts can render, and existing project/CLI compatibility remains intact. Deliver after baseline reconciliation and repository checks are in place.
 
+## 4. Workspace UX — 0.11.0a1
+
+Redesign the operator workflow around direct workspace startup, project/session controls, a forecast editor, and on-demand embedded chart tabs. Keep explicit map readiness, separate OSM availability, editable unnamed drafts, and a shared Sky/Typhoon appearance switch. See the [workspace guide](docs/workspace.md).
+
+Delivery is split into [shared theme/name controls #9](https://github.com/4caster-zay/CycloneAid/pull/9), [map readiness #10](https://github.com/4caster-zay/CycloneAid/pull/10), and [workspace/output integration #11](https://github.com/4caster-zay/CycloneAid/pull/11). Verification covers both themes and three screen sizes, keyboard/focus behavior, project ownership of background outcomes, packaging, and required CI. Native platform/network follow-ups remain open in the alpha stabilization milestone.
+
 ## Later candidates
 
 Evaluate spreadsheet paste and exporting all three charts from one snapshot after testers evaluate row generation. Neither is committed to a release yet. Defer broad package restructuring, geography expansion, new scientific products, and live advisory ingestion until a separately scoped proposal has evidence and acceptance criteria.

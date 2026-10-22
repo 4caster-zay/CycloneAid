@@ -46,6 +46,8 @@ class GenerateRowsDialogTests(unittest.TestCase):
         before = screen.controller.session
         dialog = screen.generate_rows()
         self.root.update()
+        from cycloneaid.ui_theme import current_theme_name, get_palette
+        self.assertEqual(dialog.cget('background'), get_palette(current_theme_name(dialog)).background)
         self.assertEqual(dialog.start_var.get(), "")
         self.assertEqual(dialog.interval_var.get(), "6")
         self.assertEqual(dialog.horizon_var.get(), "120")
@@ -139,18 +141,20 @@ class GenerateRowsDialogTests(unittest.TestCase):
         self.assertEqual(tuple(point.time for point in screen._validated()[0]),
                          tuple(pd.Timestamp(row.values[0]) for row in rows))
 
-    def test_append_invalidates_renderer_and_marks_existing_preview_as_previous(self):
+    def test_append_invalidates_renderer_and_marks_existing_preview_as_stale(self):
         screen = self.screen
         revision = screen.controller.session.revision
-        preview_window = Mock()
-        screen._previews["track"] = (None, preview_window, revision)
+        preview_pane = Mock()
+        screen._previews["track"] = (None, preview_pane, revision)
         with patch.object(screen.renderer, "invalidate", wraps=screen.renderer.invalidate) as invalidate:
             dialog = screen.generate_rows()
             dialog.start_var.set("2026-01-01 00:00")
             dialog.horizon_var.set("6")
             dialog._apply()
         invalidate.assert_called_once_with(screen.controller.session.revision)
-        preview_window.title.assert_called_once_with("Track Preview — previous session state")
+        self.assertEqual(screen._output_state_kind["track"], "stale")
+        self.assertIn("Previous session state", screen._output_states["track"].get())
+        preview_pane.destroy.assert_not_called()
         screen._previews.clear()
 
 

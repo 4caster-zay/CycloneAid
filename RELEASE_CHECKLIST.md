@@ -1,32 +1,30 @@
-# 0.10.0a2 release verification
+# 0.11.0a1 workspace release verification
 
-Candidate date: **22 October 2026**. Experimental alpha for client testing only; not for operational use. Version maturity does not establish forecast skill, empirical cone calibration, or native GUI compatibility.
+Candidate date: **22 October 2026**. Experimental alpha for testing and development only; not for operational use. Software maturity does not establish forecast skill or empirical cone calibration.
 
-## Verified baseline
+## Component evidence
 
-- [x] Committed `ae43992` passed all six Windows/Linux/macOS × base/desktop CI jobs and the Linux GUI job: [baseline CI run](https://github.com/4caster-zay/CycloneAid/actions/runs/39710621706).
-- [x] The [historical review reconciliation](docs/history/PROJECT_REVIEW.md) maps old findings to current code/tests; no still-reproducible historical blocker was established.
-- [x] [Historical benchmarks](docs/benchmarks/BENCHMARK_RESULTS.md) retain their dates and measurement limits; they are not a current performance guarantee.
-- [x] Prior alpha evidence is preserved in the [0.10.0a1 verification archive](docs/history/release-0.10.0a1.md).
+- [Shared theme/name controls PR #9](https://github.com/4caster-zay/CycloneAid/pull/9) passed required CI before merge.
+- [Map-readiness PR #10](https://github.com/4caster-zay/CycloneAid/pull/10) passed required CI before merge.
+- [Workspace/output integration PR #11](https://github.com/4caster-zay/CycloneAid/pull/11) has passing [seven-job implementation CI](https://github.com/4caster-zay/CycloneAid/actions/runs/39758124384) for `bd00dd8`. Branch protection requires successful checks on the final documentation commit too.
+- Previous release evidence is retained in the [0.10.0a2 archive](docs/history/release-0.10.0a2.md).
 
-## Candidate gates
+## Integration gates
 
-Record commands, counts, and outcomes against the final candidate in the implementation PR and release notes. A source commit's passed CI is required before publication.
+- [x] Complete regression suite: **129 tests pass** with a real Linux Tk display and cached full geography. The six generator GUI tests also pass after the final dialog styling refinement.
+- [x] Name editing/dirty state/save/recovery, project-scoped render/setup outcomes, fitted chart views, focus retention, and shutdown cleanup.
+- [x] Both themes inspected at 1920×1080, 1366×768, and 1000×650, including responsive controls and map-enabled previews. Separate setup, session-details, generator-dialog, and control-state captures bring the UI evidence set to 14 images.
+- [x] Hover, selected, pressed, focused, and disabled appearances checked; all **96 tested theme/style/state combinations** meet 4.5:1 text contrast. Keyboard selection and theme persistence are covered by GUI tests.
+- [x] Ruff, version consistency, dependency compatibility, byte-identical hashed dependency export, YAML, and Markdown links.
+- [x] Wheel/source builds match checkout files; the packaged sample matches the documented example. Extracted artifact startup/sample/generation and source CLI export checks pass.
+- [x] Seven-job implementation CI passes before integration; final commit checks are enforced before merge.
 
-- [x] Final Linux regression suite: all 62 tests passed in 128 seconds, including CLI exports, renderer errors/restarts, and generation/session/GUI checks.
-- [x] Linux Tk suite used a temporary Xvfb display and cached full geography, including generation preview/cancel, append/undo/redo, validation, recovery, and 18 degraded/full sample preview cycles.
-- [x] After preserving fractional-second table values, all six focused generation GUI tests passed, including unchanged timestamp edits and preview invalidation.
-- [x] Ruff, single-source release metadata, locked dependency export byte equality, and `pip check` passed.
-- [x] Wheel/source distribution built; generation modules and version verified. Extracted wheel imports/generation and extracted source CLI export regression passed; samples, launchers, locks, tools, and linked docs are included.
-- [x] Source candidate `1732888` passed all seven committed CI jobs: [candidate CI run](https://github.com/4caster-zay/CycloneAid/actions/runs/39713028678). Final PR checks must also pass after documentation-only evidence updates.
-- [x] Canonical version, changelog, and README identify `0.10.0a2`. Publish only with matching tag `v0.10.0a2`, built artifacts, and exact final CI evidence after the final PR checks pass.
+Publication gate: tag `v0.11.0a1` must match the canonical version and final integrated commit. The [GitHub prerelease](https://github.com/4caster-zay/CycloneAid/releases/tag/v0.11.0a1) records final CI and supplies wheel/source artifacts, the UI evidence archive, and SHA-256 checksums. The UI archive distinguishes real cached geography from simulated missing-asset/live-map states; it makes no tester-network claim.
 
-## Explicit remaining alpha verification
+## Explicit remaining platform/network verification
 
-These are evidence requests, not confirmed defects. Keep them open until results are recorded; disclose them in every candidate/prerelease note while outstanding.
+- [Native Windows smoke check #2](https://github.com/4caster-zay/CycloneAid/issues/2): repeat the redesigned workspace's editing, themes, map setup, chart/export, close-during-render, and recovery workflow on a native graphical desktop.
+- [Native macOS smoke check #3](https://github.com/4caster-zay/CycloneAid/issues/3): the same desktop checks, including focus and keyboard behavior.
+- [Tester-network OSM check #4](https://github.com/4caster-zay/CycloneAid/issues/4): online/slow/offline tile loading and retry, independently of cached Natural Earth charts.
 
-- [ ] [Native Windows smoke check #2](https://github.com/4caster-zay/CycloneAid/issues/2): editing, generation, previews/export, close during rendering, and interrupted-work recovery.
-- [ ] [Native macOS smoke check #3](https://github.com/4caster-zay/CycloneAid/issues/3): the same graphical-desktop workflow and shutdown/recovery checks.
-- [ ] [OSM target-network check #4](https://github.com/4caster-zay/CycloneAid/issues/4): online/slow/offline pan/zoom and independent Natural Earth chart readiness.
-
-Publication gate: all locally executable candidate checks and committed CI pass, no confirmed blocker remains, and every unperformed check has a linked issue and explicit release-note disclosure. Native/network follow-ups may remain open for this experimental alpha; do not describe them as passed. The [GitHub prerelease](https://github.com/4caster-zay/CycloneAid/releases/tag/v0.10.0a2) and [issue #1](https://github.com/4caster-zay/CycloneAid/issues/1) record publication, tag, artifacts, and final CI evidence.
+These checks remain unperformed here and must be disclosed in alpha notes. Headless cross-platform CI and Linux screenshots do not substitute for them. Publication requires passing executable gates, no confirmed blocker, and tracked/disclosed outstanding checks. Scientific behavior, regional coverage, project schema 1, and CLI compatibility remain unchanged.
