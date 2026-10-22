@@ -968,6 +968,11 @@ def apply_dark_theme(window):
 
 
 class StormTrackerApp(tk.Tk):
+    def report_callback_exception(self, exc, value, tb):
+        import traceback
+        from cycloneaid.diagnostics import error_message
+        error_message('Tk callback', value, ''.join(traceback.format_exception(exc, value, tb)))
+
     def __init__(self):
         super().__init__()
         apply_dark_theme(self)

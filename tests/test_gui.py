@@ -144,7 +144,9 @@ class TkSessionTests(unittest.TestCase):
         from cycloneaid.session import load_project
         row=point_to_row(point())
         self.screen._commit(rows=[row])
+        previous_timer=self.screen._autosave_after
         self.screen._autosave()
+        self.assertNotIn(previous_timer,self.root.tk.call('after','info'))
         restored=load_project(Path(self.tmp.name)/'recovery.json')
         self.assertEqual(restored.rows,(row,))
 
@@ -218,3 +220,52 @@ class TkSessionTests(unittest.TestCase):
             widget.destroy()
             self.assertFalse(widget._scheduled_callbacks)
             screen.map_widget=None
+
+    def test_sample_preview_replacement_resize_and_close(self):
+        import time
+        from cycloneaid.session import load_project
+        sample=load_project(Path(__file__).resolve().parents[1]/'examples/sample.cycloneaid.json')
+        screen=self.screen
+        self.root.deiconify()
+        modes=('degraded','full') if os.environ.get('CYCLONEAID_GEOGRAPHY_TESTS')=='1' else ('degraded',)
+        with patch('cycloneaid.gui_session.messagebox.showerror') as errors:
+            for mode in modes:
+                screen._commit(rows=sample.rows,settings=replace(sample.settings,geography_mode=mode))
+                for cycle in range(3):
+                    for product in ('track','prognostic','ri'):
+                        with self.subTest(mode=mode,cycle=cycle,product=product):
+                            screen._start_plot(product)
+                            deadline=time.monotonic()+90
+                            while screen.renderer.busy and time.monotonic()<deadline:
+                                self.root.update()
+                                time.sleep(.02)
+                            self.assertFalse(screen.renderer.busy,'Preview worker timed out')
+                            self.assertFalse(errors.call_args_list,str(errors.call_args_list))
+                            self.assertIn(product,screen._previews)
+                            figure,window,_=screen._previews[product]
+                            window.geometry('800x550')
+                            self.root.update()
+                            window.geometry('1100x750')
+                            canvas=figure.canvas
+                            canvas.draw_idle()
+                            # Exercise closure while a Tk canvas redraw is queued.
+                            if cycle==2:
+                                window.destroy()
+                                self.assertIsNone(canvas._idle_draw_id)
+                            self.root.update()
+                            self.assertFalse(self.callback_errors,str(self.callback_errors))
+
+    def test_failed_preview_replacement_preserves_existing_window_and_releases_figure(self):
+        import matplotlib.pyplot as plt
+        screen=self.screen
+        previous=plt.figure()
+        screen._show_preview(previous,'ri',0)
+        self.root.update()
+        window=screen._previews['ri'][1]
+        replacement=plt.figure()
+        with patch('matplotlib.backends.backend_tkagg.FigureCanvasTkAgg',side_effect=RuntimeError('canvas init failed')):
+            with self.assertRaisesRegex(RuntimeError,'canvas init failed'):
+                screen._show_preview(replacement,'ri',0)
+        self.assertTrue(window.winfo_exists())
+        self.assertIs(screen._previews['ri'][0],previous)
+        self.assertNotIn(replacement.number,plt.get_fignums())

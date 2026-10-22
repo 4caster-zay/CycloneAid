@@ -23,6 +23,8 @@ Status: **0.10.0a1 alpha testing build — 21 October 2026**. This build is inte
 
 ## Remaining alpha testing and follow-up
 
+Follow-up verification on 22 October 2026: 47 local tests passed with Tk enabled and cached full geography, including 18 sample preview cycles across all three products. The clean core-only environment also passed (37 executed, 10 desktop/GUI checks skipped). Lint and wheel construction passed. The original unrecorded client popup has not been reproduced; new logs retain future worker and Tk tracebacks.
+
 - [ ] Run the final committed CI matrix on Windows, Linux, and macOS, with and without desktop extras.
 - [ ] Perform native Windows/macOS interactive smoke checks, including closing the app during rendering and recovering interrupted work.
 - [ ] Confirm OSM tile behavior on target networks; cached Natural Earth readiness does not establish tile availability.

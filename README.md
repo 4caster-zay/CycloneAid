@@ -25,6 +25,8 @@ The sample deliberately uses degraded geography, so the first charts need no map
 
 The source launcher also uses a prepared `.cache/cartopy` directory when present. An explicit `CARTOPY_DATA_DIR` takes precedence. `./start.sh --check` reports whether the required full-geography assets are cached.
 
+If a preview fails, its dialog identifies the diagnostic log. Source checkouts write it to `.cache/logs/cycloneaid.log`; tracebacks also appear in the launching terminal. Logs rotate automatically. Installed builds store logs beside recovery data under the user's state directory. Include the exact error and the relevant log excerpt when reporting a bug.
+
 ## Install and run
 
 Python **3.12** is the initial supported runtime. Tk must be available; on Debian/Ubuntu install `python3-tk`. Windows and macOS Python distributions must include Tk support.
@@ -104,6 +106,8 @@ uv run ruff check .
 uv run python tools/check_release.py
 # Linux GUI verification, with Xvfb installed:
 CYCLONEAID_GUI_TESTS=1 xvfb-run -a uv run python -m unittest discover -s tests -v
+# Also repeat all preview products with real, already-cached geography:
+CYCLONEAID_GUI_TESTS=1 CYCLONEAID_GEOGRAPHY_TESTS=1 CARTOPY_DATA_DIR="$PWD/.cache/cartopy" xvfb-run -a uv run python -m unittest discover -s tests -p test_gui.py -v
 # Explicit cold-download and warm-offline geography verification:
 uv run python tools/smoke_geography.py --cache /tmp/cycloneaid-map-cache --output /tmp/cycloneaid-charts --download
 ```

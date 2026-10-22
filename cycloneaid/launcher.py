@@ -82,6 +82,8 @@ def main(argv=None):
         print("Display connection is checked when opening the GUI.")
         return 0
     import tkinter as tk
+    from cycloneaid.diagnostics import configure_logging
+    configure_logging()
     try:
         from storm_tracker_gui import StormTrackerApp
         StormTrackerApp().mainloop()

@@ -12,7 +12,23 @@ from cycloneaid.session import (ForecastRow, SessionController, parse_row, valid
                                 save_project, load_project, recovery_path)
 from cycloneaid.imports import read_tracks, prepare_track
 from cycloneaid.rendering import RenderCoordinator, RenderRequest
+from cycloneaid.diagnostics import error_message
 from validation import validate_forecast_points
+
+
+class _PreviewWindow(tk.Toplevel):
+    figure_canvas = None
+
+    def destroy(self):
+        if self.figure_canvas is not None:
+            canvas = self.figure_canvas
+            # Embedded canvases have no Tk FigureManager to cancel these jobs.
+            for name in ('_idle_draw_id', '_event_loop_id'):
+                identifier = getattr(canvas, name, None)
+                if identifier is not None:
+                    canvas.get_tk_widget().after_cancel(identifier)
+                    setattr(canvas, name, None)
+        super().destroy()
 
 
 class SessionScreenMixin:
@@ -436,6 +452,10 @@ class SessionScreenMixin:
             messagebox.showerror("Open project", str(exc))
 
     def _autosave(self):
+        identifier = getattr(self, '_autosave_after', None)
+        if identifier is not None:
+            self.after_cancel(identifier)
+            self._autosave_after = None
         if self.controller.dirty:
             try:
                 save_project(self.controller.session, recovery_path())
@@ -519,7 +539,7 @@ class SessionScreenMixin:
             self.renderer.submit(request, path, view_state)
             self._set_buttons_loading(True, f"{'Exporting' if save else 'Rendering'} {product}…")
         except Exception as exc:
-            messagebox.showerror("Chart error", str(exc))
+            messagebox.showerror("Chart error", error_message(f'{product} request', exc))
 
     def preview_track(self):
         self._start_plot('track')
@@ -544,12 +564,14 @@ class SessionScreenMixin:
         if result is not None:
             self._set_buttons_loading(False)
             if result.error:
-                messagebox.showerror("Chart error", result.error)
+                messagebox.showerror("Chart error", error_message(
+                    f'{result.product} render (revision {result.revision})', result.error, result.detail))
             elif result.product == 'assets':
                 self._set_status("Map assets ready for offline charts")
             elif result.path:
                 self._set_status(f"Saved {result.product}: {result.path}")
             elif result.revision == self.controller.session.revision:
+                figure = None
                 try:
                     figure = pickle.loads(result.figure_bytes)  # Same-build, local child-process IPC only.
                     self._show_preview(figure, result.product, result.revision)
@@ -557,7 +579,10 @@ class SessionScreenMixin:
                     if validation.has_warnings():
                         self._show_validation_dialog(validation)
                 except Exception as exc:
-                    messagebox.showerror("Preview error", str(exc))
+                    if figure is not None and self._previews.get(result.product, (None,))[0] is not figure:
+                        import matplotlib.pyplot as plt
+                        plt.close(figure)
+                    messagebox.showerror("Preview error", error_message(f'{result.product} preview', exc))
             else:
                 self._set_status("Obsolete preview discarded; generate a preview of the edited forecast")
         self._poll_after = self.after(100, self._poll_renderer)
@@ -572,20 +597,29 @@ class SessionScreenMixin:
     def _show_preview(self, figure, product, revision):
         import matplotlib.pyplot as plt
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+        window = None
+        try:
+            window = _PreviewWindow(self)
+            window.title(f"{product.title()} Preview — {self.controller.session.settings.storm_name}")
+            window.geometry('1000x750')
+            self._theme().apply_dark_theme(window)
+            canvas = FigureCanvasTkAgg(figure, master=window)
+            window.figure_canvas = canvas
+            screen = self
+            class Toolbar(NavigationToolbar2Tk):
+                def save_figure(self, *args):
+                    screen._start_plot(product, save=True)
+            toolbar = Toolbar(canvas, window, pack_toolbar=False)
+            toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            canvas.draw_idle()
+        except Exception:
+            if window is not None:
+                window.destroy()
+            plt.close(figure)
+            raise
         if product in self._previews:
             self._previews[product][1].destroy()
-        window = tk.Toplevel(self)
-        window.title(f"{product.title()} Preview — {self.controller.session.settings.storm_name}")
-        window.geometry('1000x750')
-        self._theme().apply_dark_theme(window)
-        canvas = FigureCanvasTkAgg(figure, master=window)
-        screen = self
-        class Toolbar(NavigationToolbar2Tk):
-            def save_figure(self, *args):
-                screen._start_plot(product, save=True)
-        toolbar = Toolbar(canvas, window, pack_toolbar=False)
-        toolbar.pack(side=tk.BOTTOM, fill=tk.X)
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self._previews[product] = (figure, window, revision)
         def closed(event):
             if event.widget is window:
@@ -593,7 +627,6 @@ class SessionScreenMixin:
                 if self._previews.get(product, (None,))[0] is figure:
                     self._previews.pop(product, None)
         window.bind('<Destroy>', closed)
-        canvas.draw_idle()
 
     def _confirm_leave(self):
         if self.controller.dirty:

@@ -1,5 +1,13 @@
 # Changelog
 
+## Next alpha — unreleased
+
+- Fix CI's missing Tk runtime, explicitly select Python 3.12, and keep platform checks running independently.
+- Preserve an existing preview if replacement initialization fails; release failed figures and cancel pending embedded-canvas callbacks before closing.
+- Record worker and Tk callback tracebacks in rotating local logs and identify the log path in preview error dialogs.
+- Prevent duplicate recovery-autosave callbacks when an autosave is triggered manually.
+- Exercise repeated sample preview replacement, resizing, and closure in degraded and cached full geography.
+
 ## 0.10.0a1 — 2026-10-21 (alpha testing release)
 
 - Introduce immutable forecast/session models, common validation, explicit intensity overrides, and timestamp provenance.
