@@ -1,27 +1,27 @@
 name: Feature request
-description: Propose a focused improvement to a tester or maintainer workflow.
+description: Suggest an improvement to CycloneAid.
 title: "[Feature]: "
 labels: [feature, "priority:normal"]
 body:
   - type: textarea
     id: problem
     attributes:
-      label: Problem and audience
-      description: Who needs this improvement, and what is difficult in the current workflow?
+      label: What would this improve?
+      description: Describe what is difficult today and who would benefit from the change.
     validations:
       required: true
   - type: textarea
     id: behavior
     attributes:
-      label: Intended behavior
-      description: Describe the desired result with a concrete example. Include alternatives or limits that matter.
+      label: What would you like to happen?
+      description: Give an example of how the feature should work. Mention alternatives or limits if they matter.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: Acceptance criteria
-      description: List the observable outcomes that would make this feature complete.
+      description: List the results we should check to know the feature works.
       placeholder: |
         - [ ] ...
     validations:
@@ -29,7 +29,7 @@ body:
   - type: textarea
     id: dependencies
     attributes:
-      label: Dependencies and related work
-      description: Link issues or roadmap milestones this depends on, or write "None known."
+      label: Related work or dependencies
+      description: Link anything that needs to happen first, or write "None known."
     validations:
       required: true

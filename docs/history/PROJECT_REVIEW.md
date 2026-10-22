@@ -1,10 +1,10 @@
 # Historical CycloneAid project review
 
-**Archive:** the original review below describes commit [`592ca1f`](https://github.com/4caster-zay/CycloneAid/tree/592ca1f5b6ee8b856945adebb5f9c84df78d3e6b) on 21 October 2026, before the alpha stabilization work. Its failures, recommendations, line numbers, temporary files, and performance figures are historical evidence, not a current bug list. Source links in the original review are pinned to that reviewed commit.
+**Historical review:** this document describes commit [`592ca1f`](https://github.com/4caster-zay/CycloneAid/tree/592ca1f5b6ee8b856945adebb5f9c84df78d3e6b) on 21 October 2026, before alpha stabilization. Findings, recommendations, line numbers, and performance figures refer to that version. Source links point to the reviewed commit. Use the reconciliation below to understand which findings were addressed.
 
 ## Reconciliation — 22 October 2026
 
-Rechecked against [`ae43992`](https://github.com/4caster-zay/CycloneAid/tree/ae439928686957c5d1549a29131cfabae4ee1fc0). Current workflow and scientific qualifications live in the [README](../../README.md); current release evidence lives in the [release checklist](../../RELEASE_CHECKLIST.md). No still-reproducible blocker from this review was established in this reconciliation; do not reopen the historical findings without a current reproduction.
+The findings were rechecked against [`ae43992`](https://github.com/4caster-zay/CycloneAid/tree/ae439928686957c5d1549a29131cfabae4ee1fc0). See the [README](../../README.md) for current behavior and scientific limits, and the [release checklist](../../RELEASE_CHECKLIST.md) for current verification. This check found no reproducible blocker among the historical findings. Any new report should include a reproduction against the current version.
 
 | Original finding | Current implementation and regression evidence |
 |---|---|
@@ -26,7 +26,7 @@ Reconciliation checks executed independently:
 MPLCONFIGDIR=/tmp/cycloneaid-test-mpl MPLBACKEND=Agg .venv/bin/python -m unittest discover -s tests -p test_geography_rendering.py -v
 ```
 
-All **15 core tests and 11 geography/rendering tests passed**. GUI, CLI, and diagnostic test coverage was inspected here; their release-run outcomes are recorded separately in the release checklist. This targeted reconciliation is not a fresh full-platform certification or performance rerun.
+All **15 core tests and 11 geography/rendering tests passed**. GUI, CLI, and diagnostic test coverage was inspected; execution results are recorded separately in the release checklist. This reconciliation covered those findings only. It did not repeat platform verification or performance measurements.
 
 Remaining verification is tracked separately: native Windows/macOS interactive smoke checks and OSM tile behavior on target networks. Cached Natural Earth readiness does not establish OSM availability. Empirical cone calibration, historical forecast skill, operational suitability, and exhaustive coastline accuracy were not established by the original review or this reconciliation. These limitations are retained in current documentation.
 
@@ -205,8 +205,6 @@ The review used a temporary environment under `/tmp`, separate from the project.
 Checks included compiling all six Python modules, executing RI/validation/import/cone edge cases, exercising the original asynchronous callback with a controlled failure, running both CLI entrypoints against the sample CSV, checking module identity and figure retention, and measuring isolated city/render/table behavior. Map operation counting used a test double. Rendering checks deliberately disabled basemap features and supplied synthetic cities to avoid mixing downloads with computation.
 
 A complete interactive GUI run, actual OSM tile behavior, coastline-based landfall accuracy, peak process memory, and full cold/warm rendering profiles have not been verified. Timings are single-environment diagnostic measurements, not performance guarantees. Scientific calibration and historical forecast skill were not established by this review.
-
-Diagnostic files are currently `/tmp/cycloneaid_review_probes.py`, `/tmp/cycloneaid_review_extra.py`, and `/tmp/cycloneaid-review-output/`. They are temporary audit aids, not a committed test suite.
 
 ## Recommended work order
 

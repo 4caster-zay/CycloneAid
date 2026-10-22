@@ -14,18 +14,18 @@ body:
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: Include the starting project or sample, actions or command, and relevant settings.
+      description: Tell us which project or sample you opened, what you did, and which settings you used.
       placeholder: |
-        1. Open examples/sample.cycloneaid.json.
+        1. Choose Project → Open sample.
         2. ...
-        Geography mode: degraded / full
+        Chart maps: Full maps / Without basemap
     validations:
       required: true
   - type: textarea
     id: environment
     attributes:
       label: Environment
-      description: Find the application version on the home screen; include the operating system, Python version, and installation method.
+      description: Find the application version under Help → About and release notes. Include your operating system, Python version, and how you installed CycloneAid.
       placeholder: |
         CycloneAid version:
         Operating system:
@@ -37,9 +37,9 @@ body:
     id: evidence
     attributes:
       label: Error, logs, or example input
-      description: Paste the exact error and relevant log excerpt, or attach a small project/CSV and screenshot. For chart problems, include the input times, coordinates, winds, and wind averaging assumption needed to reproduce the result.
+      description: Include the exact error and relevant log lines, or attach a small project/CSV and a screenshot. For chart problems, include the times, coordinates, winds, and wind averaging assumption.
   - type: textarea
     id: dependencies
     attributes:
-      label: Related issues or dependencies
-      description: Link any related report or required follow-up; leave blank if none is known.
+      label: Related reports
+      description: Link any related issue, or leave this blank.

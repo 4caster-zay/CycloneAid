@@ -1,38 +1,32 @@
 # CycloneAid roadmap
 
-Current audience: the maintainer and existing desktop testers. Work follows completion gates rather than calendar deadlines. GitHub Issues hold task status and acceptance criteria; this document records direction. Retain Python 3.12/Tkinter, project schema 1, regional coverage, and scientific contracts.
+The current release is [0.11.0a1](https://github.com/4caster-zay/CycloneAid/releases/tag/v0.11.0a1). The next priority is to verify the workspace on testers' desktops before adding more forecast-entry features. Issues hold the tasks and acceptance criteria; this page explains their order.
 
-## 1. Trustworthy alpha baseline
+## Next: complete desktop and network checks
 
-[Milestone: Alpha stabilization](https://github.com/4caster-zay/CycloneAid/milestone/1)
+The [alpha stabilization milestone](https://github.com/4caster-zay/CycloneAid/milestone/1) remains open for:
 
-- [Reconcile the baseline and publish verified 0.10.0a2](https://github.com/4caster-zay/CycloneAid/issues/1): archive historical findings, run current checks, and publish matching version/tag/prerelease with evidence and limitations. Release evidence lives in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
-- [Native Windows smoke check](https://github.com/4caster-zay/CycloneAid/issues/2), [native macOS smoke check](https://github.com/4caster-zay/CycloneAid/issues/3), and [OSM on target networks](https://github.com/4caster-zay/CycloneAid/issues/4) remain separate evidence requests. Passing headless CI does not close them.
+- [Windows desktop checks #2](https://github.com/4caster-zay/CycloneAid/issues/2).
+- [macOS desktop checks #3](https://github.com/4caster-zay/CycloneAid/issues/3).
+- [OSM behavior on tester networks #4](https://github.com/4caster-zay/CycloneAid/issues/4).
 
-Gate: no reproducible release blocker remains; every outstanding verification item has evidence or a linked issue. Unperformed native/network checks stay disclosed in alpha notes. This milestone remains open until their outcomes are recorded.
+These checks cover editing, themes, map setup, preview and export, recovery, and online or offline tile loading. Each needs a recorded result from the relevant desktop or network. Headless CI and cached chart maps do not replace that evidence. Reproduce any reported failure and open a focused bug before treating it as a release blocker.
 
-## 2. Sustainable repository maintenance
+## Delivered
 
-[Milestone: Repository maintenance](https://github.com/4caster-zay/CycloneAid/milestone/2) · [Implementation issue](https://github.com/4caster-zay/CycloneAid/issues/5)
+| Work | Result | References |
+| --- | --- | --- |
+| Alpha baseline | Reconciled the historical review, verified the repaired application, and published 0.10.0a2. | [Issue #1](https://github.com/4caster-zay/CycloneAid/issues/1), [release records](RELEASE_CHECKLIST.md) |
+| Repository maintenance | Added issue forms, contribution guidance, labels, required CI, and grouped monthly dependency updates. | [Issue #5](https://github.com/4caster-zay/CycloneAid/issues/5), [milestone](https://github.com/4caster-zay/CycloneAid/milestone/2) |
+| Forecast row generation | Added timestamp-only rows with a range preview, validation, and one-step undo. | [Issue #6](https://github.com/4caster-zay/CycloneAid/issues/6), [milestone](https://github.com/4caster-zay/CycloneAid/milestone/3), [guide](docs/row-generation.md) |
+| Forecast workspace | Added embedded chart tabs, map readiness and setup, blank-name editing, and shared light/dark controls in 0.11.0a1. | [Controls #9](https://github.com/4caster-zay/CycloneAid/pull/9), [maps #10](https://github.com/4caster-zay/CycloneAid/pull/10), [integration #11](https://github.com/4caster-zay/CycloneAid/pull/11), [guide](docs/workspace.md) |
 
-Use issue forms, a short PR template, type/priority labels, short-lived `codex/` branches, and required CI on `main`. Solo PRs do not require a second reviewer. Archive historical material under `docs/`; keep current setup and workflows in the README. Group dependency updates monthly and refresh the hashed requirements export before merging.
+## Ongoing maintenance
 
-Gate: testers can file a useful report, the next unblocked task is identifiable from issues, and required CI protects merges. Follow the [contribution and maintenance guide](CONTRIBUTING.md): triage weekly during active testing, review dependencies and release readiness monthly.
+Review tester reports weekly during active testing, and dependencies and release readiness monthly. Keep the next task clear in Issues, use focused PRs, and merge after required CI passes. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
 
-## 3. Faster forecast row entry
+## Possible later work
 
-[Milestone: Forecast row generation](https://github.com/4caster-zay/CycloneAid/milestone/3) · [Implementation issue](https://github.com/4caster-zay/CycloneAid/issues/6)
+Spreadsheet paste and exporting all charts together are candidates after feedback on row generation and the workspace. They are not scheduled for a release.
 
-Generate timestamps from an explicit UTC start, interval (6 hours by default), and horizon (120 hours by default). Preview the inclusive range; append without replacing existing rows. Keep coordinates and winds blank, retain generated timestamp provenance, and make the entire addition one undoable action. See [operator instructions](docs/row-generation.md).
-
-Gate: pure generation and session/GUI regressions pass, incomplete drafts cannot render, completed drafts can render, and existing project/CLI compatibility remains intact. Deliver after baseline reconciliation and repository checks are in place.
-
-## 4. Workspace UX — 0.11.0a1
-
-Redesign the operator workflow around direct workspace startup, project/session controls, a forecast editor, and on-demand embedded chart tabs. Keep explicit map readiness, separate OSM availability, editable unnamed drafts, and a shared Sky/Typhoon appearance switch. See the [workspace guide](docs/workspace.md).
-
-Delivery is split into [shared theme/name controls #9](https://github.com/4caster-zay/CycloneAid/pull/9), [map readiness #10](https://github.com/4caster-zay/CycloneAid/pull/10), and [workspace/output integration #11](https://github.com/4caster-zay/CycloneAid/pull/11). Verification covers both themes and three screen sizes, keyboard/focus behavior, project ownership of background outcomes, packaging, and required CI. Native platform/network follow-ups remain open in the alpha stabilization milestone.
-
-## Later candidates
-
-Evaluate spreadsheet paste and exporting all three charts from one snapshot after testers evaluate row generation. Neither is committed to a release yet. Defer broad package restructuring, geography expansion, new scientific products, and live advisory ingestion until a separately scoped proposal has evidence and acceptance criteria.
+Keep Python 3.12, Tkinter, project schema 1, current regional coverage, and the existing scientific calculations. Broader package changes, expanded geography, new scientific products, and live advisory retrieval need separate proposals and supporting evidence. Work advances when the checks are complete, rather than on fixed calendar deadlines.

@@ -1,8 +1,8 @@
 # Historical diagnostic performance measurements
 
-**Archive:** these are the original 21 October 2026 measurements, not current-release performance gates. They accompany the [historical review and its reconciliation](../history/PROJECT_REVIEW.md). The reviewed baseline is pinned to [`592ca1f`](https://github.com/4caster-zay/CycloneAid/tree/592ca1f5b6ee8b856945adebb5f9c84df78d3e6b); the original table labels its candidate `0.10.0a1` but does not retain a candidate commit SHA. Do not attribute these medians to a later release or infer end-to-end latency from them.
+**Historical measurements:** these results were recorded on 21 October 2026 for the [project review](../history/PROJECT_REVIEW.md). The reviewed baseline is [`592ca1f`](https://github.com/4caster-zay/CycloneAid/tree/592ca1f5b6ee8b856945adebb5f9c84df78d3e6b). The original table labels the comparison version `0.10.0a1`, but its commit SHA was not recorded. These measurements apply to that comparison only and exclude much of the interactive rendering process.
 
-The [benchmark tool](../../tools/benchmark.py) remains available. Run the command below from the repository root to produce a fresh comparison against the current checkout, and record its commit/environment alongside any new results. Moving this document did not rerun or change the historical measurements.
+Use the [benchmark tool](../../tools/benchmark.py) from the repository root to compare the current checkout with an earlier version. Record both commits and the environment alongside new results. The measurements below have been preserved without rerunning them.
 
 Measured 21 October 2026 against review commit `592ca1f`, with five measured runs per operation after one warm-up. Both versions used the same Python 3.12.14 environment and deterministic synthetic inputs.
 
@@ -18,7 +18,7 @@ The old city caller scans all cities; the candidate uses a corrected R-tree cand
 
 The old row path reparses Treeview strings; the candidate validates the session using cached parsed rows and additionally checks shared domain rules. GUI tests verify that one coordinate edit reuses markers and preserves the viewport, including a 1,000-row test double.
 
-The historical track builder encodes a 300-DPI PNG during preview construction. The candidate builder performs no export. These builder timings **exclude candidate worker serialization, canvas painting, real basemaps, network access, and user interaction**. They demonstrate removed work, rather than end-to-end GUI latency. Track geometry and metadata also reflect correctness fixes, so pixels differ between versions.
+The historical track builder encodes a 300-DPI PNG during preview construction. The candidate builder performs no export. These builder timings **exclude candidate worker serialization, canvas painting, real basemaps, network access, and user interaction**. They measure the work removed from figure construction. Track geometry and metadata also include correctness fixes, so the rendered images differ between versions.
 
 Command used:
 
