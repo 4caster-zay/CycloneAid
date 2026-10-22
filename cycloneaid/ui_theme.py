@@ -104,15 +104,28 @@ def _styles(root, palette):
         style.configure(name, background=p.background, foreground=p.text)
     style.configure("Card.TLabel", background=p.panel, foreground=p.text)
     style.configure("Muted.TLabel", background=p.background, foreground=p.muted)
+    style.configure("Error.TLabel", background=p.background, foreground=p.invalid_text)
+    style.map("Error.TLabel", background=[("disabled", p.background), ("active", p.background)],
+              foreground=[("disabled", p.muted), ("active", p.invalid_text)])
     style.configure("Status.TLabel", background=p.status, foreground=p.muted)
     style.configure("Title.TLabel", background=p.background, foreground=p.text,
                     font=("Segoe UI", 14, "bold"))
     style.configure("TButton", background=p.panel, foreground=p.text, bordercolor=p.border,
-                    focusthickness=2, focuscolor=p.primary, padding=(10, 6), anchor="center")
+                    lightcolor=p.border, darkcolor=p.border, relief="flat", borderwidth=1,
+                    focusthickness=2, focuscolor=p.primary, padding=(10, 6), anchor="center", width=0)
     style.map("TButton", background=[("disabled", p.background), ("pressed", p.border),
                                     ("active", p.hover)],
               foreground=[("disabled", p.muted), ("pressed", p.text), ("active", p.text)],
               bordercolor=[("focus", p.primary), ("active", p.primary)])
+    for name in ("TMenubutton", "Workspace.TMenubutton"):
+        style.configure(name, background=p.panel, foreground=p.text, bordercolor=p.border,
+                        lightcolor=p.border, darkcolor=p.border, relief="flat", borderwidth=1,
+                        focusthickness=2, focuscolor=p.primary, arrowcolor=p.text, padding=(10, 6), width=0)
+        style.map(name, background=[("disabled", p.background), ("pressed", p.border),
+                                    ("active", p.hover)],
+                  foreground=[("disabled", p.muted), ("pressed", p.text), ("active", p.text)],
+                  arrowcolor=[("disabled", p.muted), ("active", p.text)],
+                  bordercolor=[("focus", p.primary), ("active", p.primary)])
     style.configure("Accent.TButton", background=p.primary, foreground=p.on_primary)
     style.map("Accent.TButton", background=[("disabled", p.panel), ("pressed", p.primary),
                                            ("active", p.primary)],
@@ -120,9 +133,12 @@ def _styles(root, palette):
                           ("active", p.on_primary)])
     for name in ("TEntry", "TCombobox", "TSpinbox"):
         style.configure(name, fieldbackground=p.surface, background=p.panel, foreground=p.text,
-                        insertcolor=p.text, bordercolor=p.border, padding=5)
+                        insertcolor=p.text, bordercolor=p.border, lightcolor=p.border, darkcolor=p.border,
+                        arrowcolor=p.text, padding=5)
         style.map(name, fieldbackground=[("disabled", p.panel), ("readonly", p.surface)],
                   foreground=[("disabled", p.muted), ("readonly", p.text)],
+                  background=[("disabled", p.panel), ("pressed", p.hover), ("active", p.hover)],
+                  arrowcolor=[("disabled", p.muted), ("active", p.text)],
                   bordercolor=[("focus", p.primary)])
     for name in ("TCheckbutton", "TRadiobutton"):
         style.configure(name, background=p.background, foreground=p.text, focuscolor=p.primary)
@@ -142,15 +158,18 @@ def _styles(root, palette):
         ("Radiobutton.focus", {"sticky": "nswe", "children": [
             ("Radiobutton.label", {"sticky": "nswe"})]})]})])
     style.configure("Treeview", background=p.surface, fieldbackground=p.surface,
-                    foreground=p.text, bordercolor=p.border, rowheight=27)
+                    foreground=p.text, bordercolor=p.border, lightcolor=p.border, darkcolor=p.border, rowheight=27)
     style.map("Treeview", background=[("selected", p.primary)],
               foreground=[("selected", p.on_primary)])
-    style.configure("Treeview.Heading", background=p.panel, foreground=p.text, padding=(5, 6))
+    style.configure("Treeview.Heading", background=p.panel, foreground=p.text, padding=(5, 6),
+                    relief="flat", lightcolor=p.border, darkcolor=p.border, bordercolor=p.border)
     style.map("Treeview.Heading", background=[("active", p.hover)])
     for name in ("TNotebook", "Workspace.TNotebook"):
-        style.configure(name, background=p.background, bordercolor=p.border, tabmargins=(0, 4, 0, 0))
+        style.configure(name, background=p.background, bordercolor=p.border,
+                        lightcolor=p.border, darkcolor=p.border, tabmargins=(0, 4, 0, 0))
     for name in ("TNotebook.Tab", "Workspace.TNotebook.Tab"):
-        style.configure(name, background=p.panel, foreground=p.muted, padding=(12, 8))
+        style.configure(name, background=p.panel, foreground=p.muted, padding=(12, 8),
+                        lightcolor=p.border, darkcolor=p.border, bordercolor=p.border)
         style.map(name, background=[("selected", p.surface), ("active", p.hover)],
                   foreground=[("selected", p.text), ("active", p.text)])
     for name in ("Horizontal.TScrollbar", "Vertical.TScrollbar"):
@@ -161,6 +180,10 @@ def _styles(root, palette):
     style.configure("TProgressbar", background=p.primary, troughcolor=p.panel)
     style.configure("TLabelframe", background=p.background, bordercolor=p.border)
     style.configure("TLabelframe.Label", background=p.background, foreground=p.muted)
+    style.configure("MapStatus.TLabel", background=p.background, foreground=p.primary,
+                    font=("Segoe UI", 10, "bold"))
+    style.configure("MapWarning.TLabel", background=p.background, foreground=p.accent,
+                    font=("Segoe UI", 10, "bold"))
     return style
 
 

@@ -13,6 +13,7 @@ class ManagedMapView(TkinterMapView):
     def __init__(self, *args, **kwargs):
         self._scheduled_callbacks = set()
         self._tk_tile_cache = {}
+        self._failed_tiles = set()
         super().__init__(*args, **kwargs)
 
     def pre_cache(self):
@@ -31,13 +32,31 @@ class ManagedMapView(TkinterMapView):
                 with Image.open(BytesIO(response.content)) as source:
                     image = source.convert('RGB')
             if self.running:
+                self._failed_tiles.discard(key)
                 self.tile_image_cache[key] = image
                 if len(self.tile_image_cache) > 512:
                     self.tile_image_cache.pop(next(iter(self.tile_image_cache)), None)
                 return image
         except (requests.RequestException, OSError, ValueError):
-            pass
+            self._failed_tiles.add(key)
+            if len(self._failed_tiles) > 512:
+                self._failed_tiles.pop()
         return None
+
+    def tile_availability(self):
+        """Report actual visible tile evidence; call only from the Tk thread."""
+        tiles = [tile for column in self.canvas_tile_array for tile in column]
+        if not tiles:
+            return "loading", ""
+        placeholders = (self.not_loaded_tile_image, self.empty_tile_image)
+        loaded = sum(tile.image not in placeholders for tile in tiles)
+        if loaded == len(tiles):
+            return "ready", ""
+        zoom = round(self.zoom)
+        visible = {(self.tile_server, zoom, *tile.tile_name_position) for tile in tiles}
+        if visible.intersection(self._failed_tiles):
+            return "unavailable", f"{loaded}/{len(tiles)} visible tiles loaded; cached coverage may be partial."
+        return "loading", f"{loaded}/{len(tiles)} visible tiles loaded."
 
     def load_images_background(self):
         while self.running:

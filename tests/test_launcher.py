@@ -98,7 +98,7 @@ class LauncherTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('CYCLONEAID_GUI_TESTS')=='1','Requires a working X display')
 class ApplicationStartupTests(unittest.TestCase):
-    def test_home_launch_sample_open_navigation_and_close(self):
+    def test_workspace_launch_sample_help_and_close(self):
         import storm_tracker_gui as ui
         from cycloneaid.session import load_project
         root=Path(__file__).resolve().parents[1]
@@ -110,33 +110,27 @@ class ApplicationStartupTests(unittest.TestCase):
             app.report_callback_exception=lambda *args:errors.append(args)
             try:
                 app.update()
-                self.assertIsInstance(app.current_frame,ui.HomeScreen)
-                home=app.current_frame
-                before=home._canvas.yview()[0]
-                home._canvas.event_generate('<Button-5>')
-                app.update()
-                self.assertGreater(home._canvas.yview()[0],before)
-                home._canvas.event_generate('<MouseWheel>',delta=1)
-                app.update()
-                self.assertLess(home._canvas.yview()[0],before+.01)
-                self.assertEqual(home._canvas.bbox(home._cw_id)[0],0)
-                app.current_frame.on_start()
-                app.update()
                 screen=app.current_frame
                 self.assertIsInstance(screen,ui.DataEntryScreen)
-                with patch('cycloneaid.gui_session.filedialog.askopenfilename',
-                           return_value=str(root/'examples/sample.cycloneaid.json')):
-                    screen.open_session()
+                self.assertEqual(screen.controller.session.rows,())
+                self.assertEqual(screen.storm_name_var.get(),'')
+                screen.open_sample()
                 app.update()
                 self.assertEqual(screen.controller.session.rows,load_project(root/'examples/sample.cycloneaid.json').rows)
                 self.assertEqual(screen.storm_name_var.get(),'TEST PALAU')
-                # Scrolling after leaving Home must not call its destroyed canvas.
+                self.assertEqual(screen.controller.session.settings.geography_mode,'degraded')
+                app.show_about()
+                app.update()
+                self.assertIs(app.current_frame,screen)
+                about=[widget for widget in app.winfo_children() if isinstance(widget,ui.tk.Toplevel)]
+                self.assertTrue(about)
+                for window in about:
+                    window.destroy()
                 app.event_generate('<MouseWheel>',delta=-120)
                 app.update()
-                screen._on_back_guarded()
                 app.after(200,app.quit)
                 app.mainloop()
-                self.assertIsInstance(app.current_frame,ui.HomeScreen)
+                self.assertIs(app.current_frame,screen)
                 self.assertEqual(errors,[])
             finally:
                 app._close()

@@ -9,13 +9,13 @@ import tkinter as tk
 from tkinter import ttk
 import sys
 from datetime import datetime, timezone
-import time as _time
 from tkinter import BooleanVar
 
 from cycloneaid.metadata import APP_NAME, CREATOR, DISPLAY_VERSION as VERSION
 from cycloneaid.model import INTENSITY_THRESHOLDS
 from cycloneaid.gui_session import SessionScreenMixin
-from cycloneaid.ui_scroll import wheel_steps
+from cycloneaid.ui_theme import (ThemeToggle, apply_theme, get_palette,
+                                 load_theme_preference, register_widget, style_widget_tree)
 
 # ─── Optional: tkintermapview ───
 try:
@@ -24,148 +24,29 @@ try:
 except ImportError:
     _HAS_MAP = False
 
-# ─── Theme Engine ───
-class Theme:
-    def __init__(self, name, primary, dark_bg, light_bg, text_fg, text_muted, accent, surface, border, bottom_bar_bg, invalid_bg, invalid_fg, warning_bg):
-        self.name = name
-        self.PRIMARY_COLOR = primary
-        self.DARK_BG = dark_bg
-        self.LIGHT_BG = light_bg
-        self.WHITE = text_fg
-        self.TEXT_MUTED = text_muted
-        self.ACCENT = accent
-        self.SURFACE = surface
-        self.BORDER = border
-        self.BOTTOM_BAR_BG = bottom_bar_bg
-        self.INVALID_BG = invalid_bg
-        self.INVALID_FG = invalid_fg
-        self.WARNING_BG = warning_bg
-
-THEMES = {
-    "Typhoon Dark": Theme("Typhoon Dark", "#00adb5", "#0f172a", "#1e293b", "#f8fafc", "#94a3b8", "#FFD700", "#334155", "#475569", "#0f172a", "#4a1a1a", "#ff8080", "#3a3a00"),
-    "Sky Light": Theme("Sky Light", "#0284c7", "#f1f5f9", "#e2e8f0", "#000000", "#475569", "#f59e0b", "#ffffff", "#cbd5e1", "#e0f2fe", "#fee2e2", "#b91c1c", "#fef3c7")
-}
-
+# Shared semantic styles also initialize ttk controls before the first switch.
 CURRENT_THEME_NAME = "Typhoon Dark"
-CURRENT_THEME = THEMES[CURRENT_THEME_NAME]
+CURRENT_THEME = get_palette(CURRENT_THEME_NAME)
 
-PRIMARY_COLOR = CURRENT_THEME.PRIMARY_COLOR
-DARK_BG = CURRENT_THEME.DARK_BG
-LIGHT_BG = CURRENT_THEME.LIGHT_BG
-WHITE = CURRENT_THEME.WHITE
-TEXT_MUTED = CURRENT_THEME.TEXT_MUTED
-ACCENT = CURRENT_THEME.ACCENT
-SURFACE = CURRENT_THEME.SURFACE
-BORDER = CURRENT_THEME.BORDER
 
-def apply_theme_to_widget_tree(widget, old_theme, new_theme):
-    color_map = {
-        old_theme.PRIMARY_COLOR: new_theme.PRIMARY_COLOR,
-        old_theme.DARK_BG: new_theme.DARK_BG,
-        old_theme.LIGHT_BG: new_theme.LIGHT_BG,
-        old_theme.WHITE: new_theme.WHITE,
-        old_theme.TEXT_MUTED: new_theme.TEXT_MUTED,
-        old_theme.ACCENT: new_theme.ACCENT,
-        old_theme.SURFACE: new_theme.SURFACE,
-        old_theme.BORDER: new_theme.BORDER,
-        old_theme.BOTTOM_BAR_BG: new_theme.BOTTOM_BAR_BG,
-        old_theme.INVALID_BG: new_theme.INVALID_BG,
-        old_theme.INVALID_FG: new_theme.INVALID_FG,
-        old_theme.WARNING_BG: new_theme.WARNING_BG,
-        "#1a1e25": new_theme.BOTTOM_BAR_BG,
-        "#222831": new_theme.DARK_BG,
-        "#393e46": new_theme.LIGHT_BG,
-        "#eeeeee": new_theme.WHITE,
-        "#ccc": new_theme.TEXT_MUTED,
-        "#aaa": new_theme.TEXT_MUTED,
-        "#888": new_theme.TEXT_MUTED,
-        "#555": new_theme.TEXT_MUTED,
-        "#444": new_theme.BORDER,
-        "#2b303b": new_theme.SURFACE,
-        "#FFD700": new_theme.ACCENT,
-        "#00adb5": new_theme.PRIMARY_COLOR,
-        "#4a1a1a": new_theme.INVALID_BG,
-        "#ff8080": new_theme.INVALID_FG,
-        "#3a3a00": new_theme.WARNING_BG,
-    }
-    
-    try:
-        if widget.cget('bg') in color_map: widget.config(bg=color_map[widget.cget('bg')])
-    except Exception: pass
-    try:
-        if widget.cget('fg') in color_map: widget.config(fg=color_map[widget.cget('fg')])
-    except Exception: pass
-    try:
-        if widget.cget('activebackground') in color_map: widget.config(activebackground=color_map[widget.cget('activebackground')])
-    except Exception: pass
-    try:
-        if widget.cget('activeforeground') in color_map: widget.config(activeforeground=color_map[widget.cget('activeforeground')])
-    except Exception: pass
-    try:
-        if widget.cget('selectcolor') in color_map: widget.config(selectcolor=color_map[widget.cget('selectcolor')])
-    except Exception: pass
-    try:
-        if widget.cget('highlightbackground') in color_map: widget.config(highlightbackground=color_map[widget.cget('highlightbackground')])
-    except Exception: pass
-    try:
-        if widget.cget('highlightcolor') in color_map: widget.config(highlightcolor=color_map[widget.cget('highlightcolor')])
-    except Exception: pass
-    
-    if isinstance(widget, tk.Button):
-        try:
-            current_text = widget.cget('text')
-            if "Sky Mode" in current_text or "Typhoon Mode" in current_text or "Theme" in current_text:
-                new_text = "🌙 Typhoon Mode" if new_theme.name == "Sky Light" else "☀️ Sky Mode"
-                widget.config(text=new_text)
-        except Exception: pass
-
-    for child in widget.winfo_children():
-        apply_theme_to_widget_tree(child, old_theme, new_theme)
-
-def set_app_theme(theme_name, app_root):
+def _set_palette_globals(name):
     global CURRENT_THEME_NAME, CURRENT_THEME
     global PRIMARY_COLOR, DARK_BG, LIGHT_BG, WHITE, TEXT_MUTED, ACCENT, SURFACE, BORDER
-    
-    if theme_name not in THEMES or theme_name == CURRENT_THEME_NAME: return
-    old_theme = CURRENT_THEME
-    new_theme = THEMES[theme_name]
-    
-    CURRENT_THEME_NAME = theme_name
-    CURRENT_THEME = new_theme
-    
-    PRIMARY_COLOR = new_theme.PRIMARY_COLOR
-    DARK_BG = new_theme.DARK_BG
-    LIGHT_BG = new_theme.LIGHT_BG
-    WHITE = new_theme.WHITE
-    TEXT_MUTED = new_theme.TEXT_MUTED
-    ACCENT = new_theme.ACCENT
-    SURFACE = new_theme.SURFACE
-    BORDER = new_theme.BORDER
-    
-    # Configure ttk styles
-    style = ttk.Style()
-    if 'clam' in style.theme_names():
-        style.theme_use('clam')
-        
-    style.configure("Vertical.TScrollbar", background=SURFACE, troughcolor=DARK_BG, bordercolor=BORDER, arrowcolor=WHITE)
-    style.configure("Horizontal.TScrollbar", background=SURFACE, troughcolor=DARK_BG, bordercolor=BORDER, arrowcolor=WHITE)
-    style.configure("Treeview", background=DARK_BG, foreground=WHITE, fieldbackground=DARK_BG, bordercolor=BORDER)
-    style.configure("Treeview.Heading", background=SURFACE, foreground=PRIMARY_COLOR, bordercolor=BORDER)
-    
-    # Walk tree and apply colors
-    apply_theme_to_widget_tree(app_root, old_theme, new_theme)
-    try:
-        app_root.configure(bg=DARK_BG)
-        if hasattr(app_root, 'current_frame') and hasattr(app_root.current_frame, 'tree'):
-            tree = app_root.current_frame.tree
-            tree.tag_configure('invalid', background=new_theme.INVALID_BG, foreground=new_theme.INVALID_FG)
-            tree.tag_configure('warning', background=new_theme.WARNING_BG, foreground=new_theme.ACCENT)
-            tree.tag_configure('normal', background=new_theme.DARK_BG, foreground=new_theme.WHITE)
-            # Re-apply tags to force refresh
-            for item in tree.get_children():
-                tags = tree.item(item, "tags")
-                tree.item(item, tags=tags)
-    except Exception: pass
+    CURRENT_THEME_NAME = name
+    CURRENT_THEME = get_palette(name)
+    PRIMARY_COLOR, DARK_BG, LIGHT_BG = CURRENT_THEME.primary, CURRENT_THEME.background, CURRENT_THEME.panel
+    WHITE, TEXT_MUTED, ACCENT = CURRENT_THEME.text, CURRENT_THEME.muted, CURRENT_THEME.accent
+    SURFACE, BORDER = CURRENT_THEME.surface, CURRENT_THEME.border
+
+
+_set_palette_globals(CURRENT_THEME_NAME)
+
+
+def set_app_theme(theme_name, app_root, persist=True):
+    _set_palette_globals(theme_name)
+    apply_theme(app_root, theme_name, persist=persist)
+    apply_dark_theme(app_root, dark=theme_name == "Typhoon Dark")
+
 
 # ─── Intensity colour map (shared with storm_tracker.py) ───
 INTENSITY_COLORS = {
@@ -178,6 +59,16 @@ INTENSITY_COLORS = {
 CHANGELOG = [
     {
         "version": VERSION,
+        "date": "2026-10-22",
+        "entries": [
+            "Open directly into a forecast workspace with embedded chart tabs.",
+            "Use explicit map readiness and setup, with independent OSM tile status.",
+            "Switch Sky/Typhoon appearance with accessible controls and edit unnamed drafts naturally.",
+            "Keep fitted previews, keyboard editing, and project state stable while rendering."
+        ],
+    },
+    {
+        "version": "0.10.0a2 (Alpha 2)",
         "date": "2026-10-22",
         "entries": [
             "Generate UTC forecast timestamps with a range preview and one-step undo.",
@@ -289,244 +180,6 @@ CHANGELOG = [
 # HOME SCREEN
 # ═════════════════════════════════════════════════════════════════════════════
 
-class HomeScreen(tk.Frame):
-    """Home screen with feature showcase, changelog, and launch button."""
-
-    FEATURES = [
-        {"icon": "🗺️", "title": "Storm Track Plot",
-         "desc": "Regional forecast track graphics with\na geodesic heuristic envelope, cities,\nand intensity classification.",
-         "color": "#00adb5"},
-        {"icon": "📊", "title": "Prognostic Chart",
-         "desc": "Intensity timelines, category changes,\napproximate coastline landfall events,\nand city proximity analysis.",
-         "color": "#FF6B6B"},
-        {"icon": "⚡", "title": "Rapid Intensification",
-         "desc": "Exact 24-hour forecast wind changes\nwith the NHC 30-kt RI threshold and\nestimated endpoint labels.",
-         "color": "#FFD700"},
-        {"icon": "📋", "title": "Data Management",
-         "desc": "Project save, recovery, and undo/redo.\nCSV interchange and staged imports\nfrom CSV, GPX, KML, and KMZ.",
-         "color": "#48CFAD"},
-        {"icon": "🗺️", "title": "Interactive Map",
-         "desc": "OSM map with incremental marker sync\nand right-click data entry. No live\nstorm-advisory feed.",
-         "color": "#FF9F43"},
-        {"icon": "✅", "title": "Data Validation",
-         "desc": "Automatic QC checks on coordinates,\nwind speed, time ordering, and\nintensity consistency.",
-         "color": "#4FC1E9"},
-    ]
-
-    def __init__(self, master, on_start):
-        super().__init__(master, bg=DARK_BG)
-        self.on_start = on_start
-        self._changelog_visible = False
-        self._changelog_frame = None
-        self._create_ui()
-
-    # ── Build ──
-    def _create_ui(self):
-        # Bottom bar (pack first → stays at bottom)
-        self._build_bottom_bar()
-
-        # Scrollable content
-        scroll_container = tk.Frame(self, bg=DARK_BG)
-        scroll_container.pack(fill=tk.BOTH, expand=True)
-
-        self._canvas = tk.Canvas(scroll_container, bg=DARK_BG, highlightthickness=0, bd=0, yscrollincrement=20)
-        vsb = ttk.Scrollbar(scroll_container, orient=tk.VERTICAL, command=self._canvas.yview)
-        self._canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        self._canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self._content = tk.Frame(self._canvas, bg=DARK_BG)
-        self._cw_id = self._canvas.create_window((0, 0), window=self._content, anchor=tk.NW)
-        self._canvas.bind("<Configure>", lambda e: self._canvas.itemconfig(self._cw_id, width=e.width))
-        self._content.bind("<Configure>", lambda e: self._canvas.configure(scrollregion=self._canvas.bbox("all")))
-        root = self.winfo_toplevel()
-        sequences = ['<MouseWheel>']
-        if self.tk.call('tk', 'windowingsystem') == 'x11':
-            sequences += ['<Button-4>', '<Button-5>']
-        self._wheel_bindings = [(sequence, root.bind(sequence, self._scroll, add='+'))
-                                for sequence in sequences]
-
-        self._build_hero()
-        self._build_story()
-        self._build_feature_cards()
-        self._build_changelog_toggle()
-
-    def _scroll(self, event):
-        if str(event.widget).startswith(str(self)+'.'):
-            self._canvas.yview_scroll(-3 * wheel_steps(event), 'units')
-            return 'break'
-
-    def destroy(self):
-        for sequence, identifier in self._wheel_bindings:
-            self.winfo_toplevel().unbind(sequence, identifier)
-        super().destroy()
-
-    # ── Bottom bar ──
-    def _build_bottom_bar(self):
-        bar = tk.Frame(self, bg="#1a1e25", bd=1, relief=tk.SUNKEN)
-        bar.pack(side=tk.BOTTOM, fill=tk.X)
-        tk.Label(bar, text="⚠️  ALPHA — For testing and development only. Not for operational use.  ⚠️",
-                 font=("Segoe UI", 10, "bold"), fg=DARK_BG, bg=ACCENT, padx=10, pady=5).pack(fill=tk.X)
-        tk.Label(bar, text=f"Created by {CREATOR}  •  {VERSION}  •  Report bugs and feedback",
-                 font=("Segoe UI", 9), fg="#888", bg="#1a1e25", pady=4).pack(fill=tk.X)
-
-    # ── Hero section ──
-    def _build_hero(self):
-        hero = tk.Frame(self._content, bg=DARK_BG)
-        hero.pack(fill=tk.X, pady=(30, 10))
-
-        tk.Label(hero, text="🌀", font=("Segoe UI Emoji", 56), bg=DARK_BG, fg=PRIMARY_COLOR).pack()
-        try:
-            name_font = ("Century Gothic", 42, "bold")
-            tk.Label(hero, text=APP_NAME.upper(), font=name_font, fg=PRIMARY_COLOR, bg=DARK_BG).pack(pady=(0, 2))
-        except Exception:
-            tk.Label(hero, text=APP_NAME.upper(), font=("Segoe UI", 42, "bold"), fg=PRIMARY_COLOR, bg=DARK_BG).pack(pady=(0, 2))
-
-        tk.Label(hero, text="Tropical Cyclone Forecast Track & Intensity Analysis Suite",
-                 font=("Segoe UI", 13), fg="#aaa", bg=DARK_BG).pack(pady=(0, 4))
-
-        ver_frame = tk.Frame(hero, bg=DARK_BG)
-        ver_frame.pack(pady=(2, 12))
-        tk.Label(ver_frame, text=f" {VERSION} ", font=("Consolas", 11, "bold"),
-                 fg=DARK_BG, bg=ACCENT, padx=8, pady=2).pack(side=tk.LEFT, padx=4)
-
-        theme_btn = tk.Button(ver_frame, text="☀️ Sky Mode" if CURRENT_THEME_NAME == "Typhoon Dark" else "🌙 Typhoon Mode", command=lambda: set_app_theme(
-            "Sky Light" if CURRENT_THEME_NAME == "Typhoon Dark" else "Typhoon Dark", 
-            self.winfo_toplevel()
-        ), bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"), relief=tk.FLAT, bd=0, cursor="hand2", padx=14, pady=6)
-        theme_btn.pack(side=tk.LEFT, padx=10)
-        theme_btn.bind("<Enter>", lambda e, b=theme_btn: b.config(bg=ACCENT, fg=DARK_BG))
-        theme_btn.bind("<Leave>", lambda e, b=theme_btn: b.config(bg=LIGHT_BG, fg=WHITE))
-
-        tk.Label(hero, text="Experimental regional graphics from supplied forecasts. Not for operational use.",
-                 font=("Segoe UI", 10), fg=ACCENT, bg=DARK_BG).pack(pady=(0, 8))
-
-        # Launch button
-        start_btn = tk.Button(
-            hero, text="  🚀  Launch CycloneAid  ",
-            font=("Segoe UI", 16, "bold"), bg=PRIMARY_COLOR, fg=DARK_BG,
-            width=26, height=2, command=self.on_start, relief=tk.FLAT, bd=0,
-            activebackground=ACCENT, activeforeground=DARK_BG, cursor="hand2",
-        )
-        start_btn.pack(pady=(4, 16))
-        start_btn.configure(highlightthickness=0, borderwidth=0)
-        start_btn.bind("<Enter>", lambda e: start_btn.config(bg=ACCENT))
-        start_btn.bind("<Leave>", lambda e: start_btn.config(bg=PRIMARY_COLOR))
-
-        # Divider
-        sep = tk.Frame(hero, bg=DARK_BG)
-        sep.pack(fill=tk.X, padx=80, pady=(0, 8))
-        tk.Frame(sep, bg=LIGHT_BG, height=1).pack(fill=tk.X)
-
-    # ── Origin story ──
-    def _build_story(self):
-        sf = tk.Frame(self._content, bg=LIGHT_BG, padx=20, pady=14,
-                      highlightthickness=1, highlightbackground=BORDER)
-        sf.pack(fill=tk.X, padx=60, pady=(4, 14))
-
-        tk.Label(sf, text="💡  Why CycloneAid?", font=("Segoe UI", 13, "bold"),
-                 fg=ACCENT, bg=LIGHT_BG, anchor=tk.W).pack(anchor=tk.W, pady=(0, 6))
-
-        story = (
-            "Forecaster Zayed built CycloneAid because he was absolutely tired of manually "
-            "drawing storm track charts on Canva every single time a cyclone spun up. 😤🎨\n\n"
-            "What started as \"there HAS to be a better way\" turned into a full forecast analysis "
-            "suite — auto-generated track maps, prognostic timelines, RI analysis, and proper "
-            "dark-mode cartography. No more dragging arrows around in a graphic design tool. "
-            "Now the data does the drawing."
-        )
-        tk.Label(sf, text=story, font=("Segoe UI", 10), fg="#ccc", bg=LIGHT_BG,
-                 justify=tk.LEFT, anchor=tk.W, wraplength=700).pack(anchor=tk.W)
-
-    # ── Feature cards ──
-    def _build_feature_cards(self):
-        tk.Label(self._content, text="✦  Features  ✦", font=("Segoe UI", 14, "bold"),
-                 fg=ACCENT, bg=DARK_BG).pack(pady=(4, 10))
-
-        grid = tk.Frame(self._content, bg=DARK_BG)
-        grid.pack(fill=tk.X, padx=40, pady=(0, 16))
-        for i, feat in enumerate(self.FEATURES):
-            row, col = divmod(i, 3)
-            self._make_card(grid, feat, row, col)
-        for c in range(3):
-            grid.columnconfigure(c, weight=1)
-
-    def _make_card(self, parent, feat, row, col):
-        card = tk.Frame(parent, bg=LIGHT_BG, bd=0, padx=14, pady=12,
-                        highlightthickness=1, highlightbackground=BORDER, highlightcolor=feat["color"])
-        card.grid(row=row, column=col, padx=8, pady=8, sticky="nsew")
-
-        tk.Label(card, text=feat["icon"], font=("Segoe UI Emoji", 28), bg=LIGHT_BG, fg=feat["color"]).pack(anchor=tk.W)
-        tk.Label(card, text=feat["title"], font=("Segoe UI", 12, "bold"), fg=feat["color"], bg=LIGHT_BG, anchor=tk.W).pack(anchor=tk.W, pady=(2, 4))
-        tk.Label(card, text=feat["desc"], font=("Segoe UI", 9), fg="#ccc", bg=LIGHT_BG, justify=tk.LEFT, anchor=tk.W).pack(anchor=tk.W)
-
-        def _enter(e, c=card, clr=feat["color"]):
-            c.config(highlightbackground=clr, highlightthickness=2)
-        def _leave(e, c=card):
-            c.config(highlightbackground=BORDER, highlightthickness=1)
-        for w in [card] + list(card.winfo_children()):
-            w.bind("<Enter>", _enter)
-            w.bind("<Leave>", _leave)
-
-    # ── Changelog toggle ──
-    def _build_changelog_toggle(self):
-        """A clickable bar that expands/collapses the full changelog."""
-        self._cl_toggle_frame = tk.Frame(self._content, bg=DARK_BG)
-        self._cl_toggle_frame.pack(fill=tk.X, padx=60, pady=(0, 4))
-
-        self._cl_btn = tk.Button(
-            self._cl_toggle_frame,
-            text="📜  View Changelog  ▾",
-            font=("Segoe UI", 11, "bold"), fg=PRIMARY_COLOR, bg=LIGHT_BG,
-            activebackground=ACCENT, activeforeground=DARK_BG,
-            relief=tk.FLAT, cursor="hand2", bd=0, padx=16, pady=6,
-            command=self._toggle_changelog,
-        )
-        self._cl_btn.pack(fill=tk.X)
-        self._cl_btn.bind("<Enter>", lambda e: self._cl_btn.config(bg=ACCENT, fg=DARK_BG))
-        self._cl_btn.bind("<Leave>", lambda e: self._cl_btn.config(bg=LIGHT_BG, fg=PRIMARY_COLOR))
-
-        # Container for changelog entries (initially hidden)
-        self._changelog_container = tk.Frame(self._content, bg=DARK_BG)
-
-    def _toggle_changelog(self):
-        if self._changelog_visible:
-            self._changelog_container.pack_forget()
-            self._cl_btn.config(text="📜  View Changelog  ▾")
-            self._changelog_visible = False
-        else:
-            # Build entries lazily on first open
-            if not self._changelog_container.winfo_children():
-                self._populate_changelog()
-            self._changelog_container.pack(fill=tk.X, padx=60, pady=(0, 20))
-            self._cl_btn.config(text="📜  Hide Changelog  ▴")
-            self._changelog_visible = True
-        # Refresh scroll region
-        self._content.update_idletasks()
-        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
-
-    def _populate_changelog(self):
-        for entry in CHANGELOG:
-            ver_frame = tk.Frame(self._changelog_container, bg=SURFACE, padx=16, pady=10,
-                                 highlightthickness=1, highlightbackground=BORDER)
-            ver_frame.pack(fill=tk.X, pady=4)
-
-            header = tk.Frame(ver_frame, bg=SURFACE)
-            header.pack(fill=tk.X)
-            tk.Label(header, text=entry["version"], font=("Segoe UI", 12, "bold"),
-                     fg=PRIMARY_COLOR, bg=SURFACE).pack(side=tk.LEFT)
-            tk.Label(header, text=entry["date"], font=("Consolas", 9),
-                     fg="#888", bg=SURFACE).pack(side=tk.RIGHT)
-
-            for line in entry["entries"]:
-                tk.Label(ver_frame, text=f"  {line}", font=("Segoe UI", 9),
-                         fg="#ccc", bg=SURFACE, anchor=tk.W, justify=tk.LEFT).pack(anchor=tk.W, pady=1)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CELL EDITOR
-# ═════════════════════════════════════════════════════════════════════════════
-
 class CellEditor:
     """Inline cell editor for Treeview cells — dropdowns, checkboxes, text."""
 
@@ -540,6 +193,7 @@ class CellEditor:
         self.on_save_callback = on_save_callback
         self._saving = False
         self.editor = None
+        self._value_var = None
         self.frame = None
 
         bbox = tree.bbox(item, column)
@@ -568,11 +222,8 @@ class CellEditor:
         cb = ttk.Combobox(self.frame, textvariable=var, values=options, state="readonly", width=10)
         cb.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         cb.focus()
-        save = lambda _=None: self._commit_value(var.get())
-        cb.bind('<Return>', save)
-        cb.bind('<Escape>', lambda _: self.cancel())
-        cb.bind('<FocusOut>', save)
-        cb.event_generate('<Button-1>')
+        self._bind_editor(cb, var)
+        cb.bind('<<ComboboxSelected>>', lambda event: self._finish())
 
     # ── Storm Type dropdown ──
     def _dropdown_storm_type(self):
@@ -581,11 +232,8 @@ class CellEditor:
         cb = ttk.Combobox(self.frame, textvariable=var, values=options, state="readonly", width=12)
         cb.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         cb.focus()
-        save = lambda _=None: self._commit_value(var.get())
-        cb.bind('<Return>', save)
-        cb.bind('<Escape>', lambda _: self.cancel())
-        cb.bind('<FocusOut>', save)
-        cb.event_generate('<Button-1>')
+        self._bind_editor(cb, var)
+        cb.bind('<<ComboboxSelected>>', lambda event: self._finish())
 
     # ── Landfall checkbox ──
     def _checkbox_landfall(self):
@@ -596,6 +244,7 @@ class CellEditor:
         cb.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
         cb.focus()
         self._resize_frame(120, 35)
+        self._bind_editor(cb, var)
 
     # ── Interpolated checkbox ──
     def _checkbox_interpolated(self):
@@ -606,6 +255,7 @@ class CellEditor:
         cb.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
         cb.focus()
         self._resize_frame(120, 35)
+        self._bind_editor(cb, var)
 
     def _save_bool(self, var, label):
         value = "True" if var.get() else "False"
@@ -618,12 +268,38 @@ class CellEditor:
         entry.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         entry.focus()
         entry.select_range(0, tk.END)
-        save = lambda _=None: self._commit_value(var.get())
-        entry.bind('<Return>', save)
-        entry.bind('<Escape>', lambda _: self.cancel())
-        entry.bind('<FocusOut>', save)
+        self._bind_editor(entry, var)
+        entry.bind('<FocusOut>', lambda event: self.commit() if entry.focus_get() is not entry else None)
 
     # ── Helpers ──
+    def _bind_editor(self, widget, variable):
+        self.editor, self._value_var = widget, variable
+        if isinstance(widget, tk.Entry):
+            register_widget(widget, "entry")
+        elif isinstance(widget, tk.Checkbutton):
+            register_widget(widget, "checkbutton")
+        widget.bind('<Return>', self._finish)
+        widget.bind('<Escape>', lambda event: self.cancel())
+        widget.bind('<Tab>', lambda event: self._navigate(1))
+        widget.bind('<Shift-Tab>', lambda event: self._navigate(-1))
+        widget.bind('<ISO_Left_Tab>', lambda event: self._navigate(-1))
+
+    def commit(self):
+        if self._value_var is not None and self.frame is not None:
+            self._commit_value(str(self._value_var.get()))
+
+    def _finish(self, event=None):
+        self.commit()
+        self.tree.focus_set()
+        return 'break'
+
+    def _navigate(self, direction):
+        screen = getattr(self.on_save_callback, '__self__', None)
+        self.commit()
+        if screen is not None:
+            screen._edit_adjacent(self.item, self.col_idx, direction)
+        return 'break'
+
     def _resize_frame(self, min_w, min_h):
         self.frame.update_idletasks()
         self.frame.place(width=max(min_w, self.frame.winfo_reqwidth()), height=max(min_h, self.frame.winfo_reqheight()))
@@ -637,7 +313,10 @@ class CellEditor:
         self.on_save_callback(self.item, self.col_idx, value)
 
     def cancel(self):
+        self._saving = True
         self.destroy()
+        self.tree.focus_set()
+        return 'break'
 
     def destroy(self):
         if self.frame:
@@ -650,309 +329,326 @@ class CellEditor:
 # ═════════════════════════════════════════════════════════════════════════════
 
 class DataEntryScreen(SessionScreenMixin, tk.Frame):
-    """Split-pane command center: data table on the left, live map on the right."""
+    """Forecast editor with on-demand embedded chart outputs."""
 
     INTENSITY_THRESHOLDS = INTENSITY_THRESHOLDS
     COLUMNS = [
-        ("Time (UTC)", 18), ("Lead Time (h)", 10), ("Lat", 8), ("Lon", 8),
-        ("Wind (kt)", 10), ("Landfall", 8), ("Storm Type", 12),
-        ("Intensity", 10), ("Interpolated", 10),
+        ("Time (UTC)", 22), ("Lead Time (h)", 13), ("Lat", 8), ("Lon", 9),
+        ("Wind (kt)", 10), ("Landfall", 9), ("Storm Type", 13),
+        ("Intensity", 10), ("Interpolated", 14),
     ]
     STORM_TYPE_OPTIONS = ["Tropical", "Subtropical", "Extratropical", "Low"]
     INTENSITY_OPTIONS = ['TD', 'TS', 'STS', 'C1', 'C2', 'C3', 'C4', 'C5']
 
     def __init__(self, master, on_back):
+        set_app_theme(CURRENT_THEME_NAME, master.winfo_toplevel(), persist=False)
         super().__init__(master, bg=DARK_BG)
+        register_widget(self, "background")
         self.on_back = on_back
         self._init_session()
-        self.forecaster_confidence_var = tk.StringVar(value="Moderate")
-        self.storm_name_var = tk.StringVar(value="CycloneAid")
+        self.forecaster_confidence_var = tk.StringVar(self, "Moderate")
+        self.export_preset_var = tk.StringVar(self, "Forecaster")
+        self.storm_name_var = tk.StringVar(self, "")
         self.cell_editor = None
         self._map_markers = {}
         self._map_path = None
         self._create_ui()
         self._start_session()
+        self._update_project_status()
+        self._refresh_map_readiness()
 
-    # ─────────────────────────────────────────────────────────
-    # UI CONSTRUCTION
-    # ─────────────────────────────────────────────────────────
     def _create_ui(self):
         self._build_topbar()
-
-        # Main split — PanedWindow
-        self._paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, bg=DARK_BG,
-                                     sashwidth=4, sashrelief=tk.RAISED, bd=0)
-        self._paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 2))
-
-        # LEFT pane — data table + controls
-        left = tk.Frame(self._paned, bg=DARK_BG)
-        self._build_table(left)
-        self._build_row_toolbar(left)
-        self._build_action_buttons(left)
-        self._paned.add(left, minsize=520, stretch="always")
-
-        # RIGHT pane — live map
-        right = tk.Frame(self._paned, bg=DARK_BG)
-        self._build_map_panel(right)
-        self._paned.add(right, minsize=300, stretch="always")
-
-        # Bottom clock
+        self._build_properties()
         self._build_clock_bar()
-
+        self._paned = register_widget(tk.PanedWindow(self, orient=tk.HORIZONTAL, sashwidth=6,
+                                                     sashrelief=tk.FLAT, bd=0), "background")
+        self._paned.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 8))
+        left = ttk.Frame(self._paned, style="Workspace.TFrame")
+        self._build_row_toolbar(left)
+        self._build_table(left)
+        ttk.Label(left, text="Edit: double-click / Enter · Move: Tab · Cancel: Esc",
+                  style="Muted.TLabel").pack(fill=tk.X, pady=(6, 0))
+        self._paned.add(left, minsize=470, stretch="always")
+        right = ttk.Frame(self._paned, style="Workspace.TFrame")
+        readiness = ttk.Frame(right, style="Workspace.TFrame")
+        readiness.pack(fill=tk.X, pady=(0, 5))
+        map_frame = self._build_output_tabs(right)
+        self._build_map_panel(map_frame)
+        self._build_map_readiness(readiness, osm_parent=self._osm_info).pack(fill=tk.X)
+        self._paned.add(right, minsize=330, stretch="always")
+        self._pane_ratio = .55
+        self._split_after = None
+        self._paned.bind('<Configure>', self._initial_split, add='+')
+        self._paned.bind('<ButtonRelease-1>', self._remember_split, add='+')
         self._update_action_buttons()
 
-    # ── Top bar ──
+    def _initial_split(self, event):
+        if self._split_after is not None:
+            self.after_cancel(self._split_after)
+        def place():
+            self._split_after = None
+            self._paned.sash_place(0, int(self._paned.winfo_width()*self._pane_ratio), 0)
+        self._split_after = self.after_idle(place)
+
+    def _remember_split(self, event):
+        self._pane_ratio = self._paned.sash_coord(0)[0]/max(1, self._paned.winfo_width())
+
+    def _menu_button(self, parent, text, entries):
+        button = ttk.Menubutton(parent, text=text, style="Workspace.TMenubutton")
+        menu = register_widget(tk.Menu(button, tearoff=0), "menu")
+        for label, action in entries:
+            if label is None:
+                menu.add_separator()
+            else:
+                menu.add_command(label=label, command=action)
+        button.configure(menu=menu)
+        return button
+
     def _build_topbar(self):
-        topbar = tk.Frame(self, bg=DARK_BG)
-        tk.Button(topbar, text="← Home", command=self._on_back_guarded, bg=LIGHT_BG, fg=WHITE,
-                  font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=8, pady=8)
-        tk.Label(topbar, text="🌀 Storm Data Entry", font=("Segoe UI", 18, "bold"),
-                 fg=PRIMARY_COLOR, bg=DARK_BG).pack(side=tk.LEFT, padx=12)
+        header = ttk.Frame(self, style="Workspace.TFrame", padding=(14, 10, 14, 8))
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="CycloneAid", style="Title.TLabel").pack(side=tk.LEFT, padx=(0, 16))
+        for text, command in (("New", self.new_session), ("Open…", self.open_session), ("Save", self.save_session)):
+            ttk.Button(header, text=text, command=command).pack(side=tk.LEFT, padx=(0, 5))
+        self._menu_button(header, "Project", [("Save as…", self.save_session_as),
+                          ("Open sample", self.open_sample), (None, None),
+                          ("Undo", self.undo), ("Redo", self.redo)]).pack(side=tk.LEFT)
+        self.theme_toggle = ThemeToggle(header, command=lambda name: set_app_theme(name, self.winfo_toplevel()))
+        self.theme_toggle.pack(side=tk.RIGHT)
+        self._menu_button(header, "Help", [("About and release notes", self._show_about),
+                          ("Validation details", lambda: self._show_validation_dialog(self._validate_data())),
+                          ("Map setup", self.prepare_assets)]).pack(side=tk.RIGHT, padx=8)
+        self._project_status_var = tk.StringVar(self, "Untitled project · Saved")
+        self._project_label = ttk.Label(self, textvariable=self._project_status_var, style="Muted.TLabel")
+        self._project_label.pack(fill=tk.X, padx=16, pady=(0, 4))
 
-        tk.Label(topbar, text="Storm Name:", font=("Segoe UI", 11, "bold"), fg=WHITE, bg=DARK_BG).pack(side=tk.LEFT, padx=(30, 2))
-        tk.Entry(topbar, textvariable=self.storm_name_var, font=("Segoe UI", 11), width=16, justify="center").pack(side=tk.LEFT, padx=2)
+    def _show_about(self):
+        root = self.winfo_toplevel()
+        if hasattr(root, 'show_about'):
+            root.show_about()
+        else:
+            from tkinter import messagebox
+            messagebox.showinfo("About CycloneAid", f"CycloneAid {VERSION}\nExperimental alpha for testing only.", parent=self)
 
-        tk.Label(topbar, text="Confidence:", font=("Segoe UI", 11), fg=WHITE, bg=DARK_BG).pack(side=tk.LEFT, padx=(20, 2))
-        ttk.Combobox(topbar, textvariable=self.forecaster_confidence_var,
-                     values=["High", "Moderate", "Low"], state="readonly", width=10).pack(side=tk.LEFT, padx=2)
+    def _build_properties(self):
+        properties = ttk.Frame(self, style="Workspace.TFrame", padding=(14, 4, 14, 10))
+        properties.pack(fill=tk.X)
+        name_group = ttk.Frame(properties, style="Workspace.TFrame")
+        ttk.Label(name_group, text="Storm name", style="Property.TLabel").pack(side=tk.LEFT, padx=(0, 8))
+        self.name_entry = ttk.Entry(name_group, textvariable=self.storm_name_var, width=27)
+        self.name_entry.pack(side=tk.LEFT)
+        self._bind_name_entry(self.name_entry)
+        options = ttk.Frame(properties, style="Workspace.TFrame")
+        ttk.Label(options, text="Confidence", style="Property.TLabel").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Combobox(options, textvariable=self.forecaster_confidence_var, values=["High", "Moderate", "Low"],
+                     state="readonly", width=10).pack(side=tk.LEFT, padx=(0, 14))
+        ttk.Label(options, text="Preset", style="Property.TLabel").pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Combobox(options, textvariable=self.export_preset_var, values=["Forecaster", "Media"],
+                     state="readonly", width=11).pack(side=tk.LEFT, padx=(0, 14))
+        ttk.Button(options, text="Session details…", command=self.session_settings).pack(side=tk.LEFT)
+        self._properties_compact = None
+        def arrange(event):
+            compact = event.width < 1180
+            if compact == self._properties_compact:
+                return
+            self._properties_compact = compact
+            name_group.grid(row=0, column=0, sticky="w", pady=(0, 6 if compact else 0))
+            options.grid(row=1 if compact else 0, column=0 if compact else 1,
+                         sticky="w", padx=(0 if compact else 24, 0))
+        properties.bind('<Configure>', arrange, add='+')
 
-        tk.Label(topbar, text="Preset:", font=("Segoe UI", 11), fg=WHITE, bg=DARK_BG).pack(side=tk.LEFT, padx=(20, 2))
-        self.export_preset_var = tk.StringVar(value="Forecaster")
-        ttk.Combobox(topbar, textvariable=self.export_preset_var,
-                     values=["Forecaster", "Media"], state="readonly", width=10).pack(side=tk.LEFT, padx=2)
+    def _build_row_toolbar(self, parent):
+        toolbar = ttk.Frame(parent, style="Workspace.TFrame", padding=(0, 5, 8, 9))
+        toolbar.pack(fill=tk.X)
+        primary = ttk.Frame(toolbar, style="Workspace.TFrame")
+        primary.grid(row=0, column=0, sticky="w")
+        ttk.Label(primary, text="Forecast", style="Title.TLabel").pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Button(primary, text="Add", command=self.add_row).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(primary, text="Generate rows…", command=self.generate_rows).pack(side=tk.LEFT, padx=(0, 5))
+        self._menu_button(primary, "Rows", [("Insert above", self.insert_row_above),
+                          ("Insert below", self.insert_row_below), ("Duplicate", self.duplicate_row),
+                          ("Move up", self.move_row_up), ("Move down", self.move_row_down),
+                          (None, None), ("Delete selected", self.remove_row),
+                          ("Clear all…", self.clear_table)]).pack(side=tk.LEFT, padx=(0, 5))
+        self._row_io_button = self._menu_button(toolbar, "Import / Export", [("Import CSV…", self.import_csv),
+                          ("Import GPX…", self.import_gpx), ("Import KML / KMZ…", self.import_kml),
+                          (None, None), ("Export CSV…", self.export_csv)])
+        self._row_io_button.grid(row=0, column=1, sticky="w")
+        self._toolbar_compact = None
+        def arrange(event):
+            compact = event.width < 600
+            if compact != self._toolbar_compact:
+                self._toolbar_compact = compact
+                self._row_io_button.grid_configure(row=1 if compact else 0, column=0 if compact else 1,
+                                                   pady=(5 if compact else 0, 0))
+        toolbar.bind('<Configure>', arrange, add='+')
 
-        theme_btn = tk.Button(topbar, text="☀️ Sky Mode" if CURRENT_THEME_NAME == "Typhoon Dark" else "🌙 Typhoon Mode", command=lambda: set_app_theme(
-            "Sky Light" if CURRENT_THEME_NAME == "Typhoon Dark" else "Typhoon Dark", 
-            self.winfo_toplevel()
-        ), bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10, "bold"), relief=tk.FLAT, bd=0, cursor="hand2", padx=14, pady=6)
-        theme_btn.pack(side=tk.RIGHT, padx=12, pady=4)
-        theme_btn.bind("<Enter>", lambda e, b=theme_btn: b.config(bg=ACCENT, fg=DARK_BG))
-        theme_btn.bind("<Leave>", lambda e, b=theme_btn: b.config(bg=LIGHT_BG, fg=WHITE))
-
-        topbar.pack(fill=tk.X, pady=(0, 4))
-
-    # ── Treeview table ──
     def _build_table(self, parent):
-        self.table_frame = tk.Frame(parent, bg=DARK_BG)
-        self.table_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
-
-        columns = [c[0] for c in self.COLUMNS]
-        self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=8)
-        for col, w in self.COLUMNS:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=w * 10, anchor="center")
-
-        vsb = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
-        hsb = ttk.Scrollbar(self.table_frame, orient="horizontal", command=self.tree.xview)
+        from tkinter import font as tkfont
+        self.table_frame = ttk.Frame(parent, style="Workspace.TFrame")
+        self.table_frame.pack(fill=tk.BOTH, expand=True)
+        self.tree = ttk.Treeview(self.table_frame, columns=[c[0] for c in self.COLUMNS], show="headings", height=12)
+        heading_font = tkfont.Font(root=self, font=ttk.Style(self).lookup('Treeview.Heading', 'font') or 'TkHeadingFont')
+        for column, width in self.COLUMNS:
+            self.tree.heading(column, text=column)
+            self.tree.column(column, width=max(width*8, heading_font.measure(column)+24),
+                             minwidth=55, stretch=False, anchor="center")
+        vsb = ttk.Scrollbar(self.table_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        hsb = ttk.Scrollbar(self.table_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         self.tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
-        self.table_frame.grid_rowconfigure(0, weight=1)
-        self.table_frame.grid_columnconfigure(0, weight=1)
-
+        self.table_frame.rowconfigure(0, weight=1)
+        self.table_frame.columnconfigure(0, weight=1)
         self.tree.bind('<Double-1>', self._on_double_click)
         self.tree.bind('<Button-3>', self._show_row_context_menu)
-
+        self.tree.bind('<Return>', self._edit_selected)
+        self.tree.bind('<F2>', self._edit_selected)
+        self.tree.bind('<Tab>', self._edit_selected)
         self.tree.tag_configure('invalid', background=CURRENT_THEME.INVALID_BG, foreground=CURRENT_THEME.INVALID_FG)
         self.tree.tag_configure('warning', background=CURRENT_THEME.WARNING_BG, foreground=ACCENT)
-        self.tree.tag_configure('normal', background=DARK_BG, foreground=WHITE)
+        self.tree.tag_configure('normal', background=SURFACE, foreground=WHITE)
 
-
-    # ── Row management toolbar ──
-    def _build_row_toolbar(self, parent):
-        rows = tk.Frame(parent, bg=DARK_BG)
-        for label, action in [("➕ Add", self.add_row), ("Generate rows…", self.generate_rows),
-                              ("⬆ Above", self.insert_row_above),
-                              ("⬇ Below", self.insert_row_below), ("Dup", self.duplicate_row),
-                              ("Delete", self.remove_row), ("🔼", self.move_row_up),
-                              ("🔽", self.move_row_down), ("Clear", self.clear_table)]:
-            self._tb(rows, label, action, LIGHT_BG, WHITE)
-        rows.pack(fill=tk.X, padx=4, pady=3)
-        io = tk.Frame(parent, bg=DARK_BG)
-        for label, action in [("CSV", self.import_csv), ("GPX", self.import_gpx),
-                              ("KML/KMZ", self.import_kml), ("Export CSV", self.export_csv)]:
-            self._tb(io, label, action, LIGHT_BG, WHITE)
-        project = tk.Menubutton(io, text="Project ▾", bg=LIGHT_BG, fg=WHITE,
-                               font=("Segoe UI", 9, "bold"), relief=tk.FLAT, padx=8)
-        menu = tk.Menu(project, tearoff=0)
-        for label, action in [("Open… (Ctrl+O)", self.open_session), ("Save (Ctrl+S)", self.save_session),
-                              ("Save as…", self.save_session_as), ("Undo (Ctrl+Z)", self.undo),
-                              ("Redo (Ctrl+Y)", self.redo), ("Session settings…", self.session_settings),
-                              ("Prepare map assets…", self.prepare_assets)]:
-            menu.add_command(label=label, command=action)
-        project.config(menu=menu)
-        project.pack(side=tk.LEFT, padx=4)
-        io.pack(fill=tk.X, padx=4, pady=3)
-
-    def _tb(self, parent, text, cmd, bg, fg):
-        """Create a styled toolbar button with hover."""
-        btn = tk.Button(parent, text=text, command=cmd, bg=bg, fg=fg,
-                        font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2",
-                        padx=5, pady=2, bd=0)
-        btn.bind("<Enter>", lambda e, b=btn: b.config(bg=ACCENT, fg=DARK_BG))
-        btn.bind("<Leave>", lambda e, b=btn, _bg=bg, _fg=fg: b.config(bg=_bg, fg=_fg))
-        btn.pack(side=tk.LEFT, padx=2, pady=2)
-        return btn
-
-    # ── Action buttons (Track / Prognostic / RI) ──
-    def _build_action_buttons(self, parent):
-        af = tk.Frame(parent, bg=DARK_BG)
-
-        for label, preview_cmd, save_cmd in [
-            ("Track Plot", self.preview_track, self.save_track),
-            ("Prognostic Plot", self.preview_prognostic, self.save_prognostic),
-            ("RI (dV/dt) Plot", self.preview_ri, self.save_ri),
-        ]:
-            grp = tk.LabelFrame(af, text=label, font=("Segoe UI", 9, "bold"),
-                                fg=ACCENT, bg=DARK_BG, bd=1, relief=tk.GROOVE, padx=6, pady=4)
-            prev = tk.Button(grp, text="👁️ Preview", command=preview_cmd, bg=PRIMARY_COLOR, fg=DARK_BG,
-                             font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2")
-            save = tk.Button(grp, text="🖼️ Save", command=save_cmd, bg=LIGHT_BG, fg=WHITE,
-                             font=("Segoe UI", 10, "bold"), relief=tk.FLAT, cursor="hand2")
-            prev.pack(side=tk.LEFT, padx=3, pady=2)
-            save.pack(side=tk.LEFT, padx=3, pady=2)
-            grp.pack(side=tk.LEFT, padx=6, pady=4)
-
-        af.pack(pady=4)
-
-        # Collect action buttons for enabling/disabling
-        self._action_btns = []
-        for grp in af.winfo_children():
-            for child in grp.winfo_children():
-                if isinstance(child, tk.Button):
-                    self._action_btns.append(child)
-        self._update_action_buttons()
-
-    # ── Live Map Panel ──
     def _build_map_panel(self, parent):
-        header = tk.Frame(parent, bg=DARK_BG)
-        tk.Label(header, text="🗺️ Map — OSM tiles need connectivity", font=("Segoe UI", 14, "bold"),
-                 fg=PRIMARY_COLOR, bg=DARK_BG).pack(side=tk.LEFT, padx=8)
+        header = ttk.Frame(parent, style="Workspace.TFrame", padding=(8, 8, 8, 4))
+        header.pack(fill=tk.X)
+        ttk.Label(header, text="Interactive map", style="Workspace.TLabel").pack(side=tk.LEFT)
+        ttk.Button(header, text="Fit track", command=self.fit_map).pack(side=tk.RIGHT)
+        self._osm_info = ttk.Frame(parent, style="Workspace.TFrame", padding=(8, 0, 8, 4))
+        self._osm_info.pack(fill=tk.X)
+        self._map_host = ttk.Frame(parent, style="Workspace.TFrame")
+        self._map_host.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        self.map_widget = None
+        self._retry_live_map()
 
-        if not _HAS_MAP:
-            tk.Label(header, text="(tkintermapview not installed)", font=("Segoe UI", 9, "italic"),
-                     fg="#ff8080", bg=DARK_BG).pack(side=tk.LEFT, padx=4)
-        self._tb(header, "Fit track", self.fit_map, LIGHT_BG, WHITE)
-        header.pack(fill=tk.X, pady=(4, 2))
-
+    def _retry_live_map(self):
+        position, zoom, cached_tiles = (14.5, 121.0), 5, {}
+        previous = self.map_widget
+        if previous is not None:
+            position, zoom = previous.get_position(), previous.zoom
+            cached_tiles = dict(previous.tile_image_cache)
+            previous.destroy()
+        for child in self._map_host.winfo_children():
+            child.destroy()
+        self._map_markers, self._map_state = {}, {}
+        self._map_path, self._path_coordinates = None, ()
+        self.map_widget = None
+        failure = "Install the desktop extra; chart previews remain available."
         if _HAS_MAP:
-            self.map_widget = ManagedMapView(parent, corner_radius=0)
-            self.map_widget.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
-            # Default centre — western Pacific
-            self.map_widget.set_position(14.5, 121.0)
-            self.map_widget.set_zoom(5)
-            # Use OpenStreetMap tiles (default)
-            self.map_widget.set_tile_server("https://tile.openstreetmap.org/{z}/{x}/{y}.png")
-            # Right-click → add storm data point
-            self.map_widget.add_right_click_menu_command(
-                "📍 Add Storm Data Here", self._on_map_right_click, pass_coords=True
-            )
-        else:
-            fallback = tk.Frame(parent, bg=SURFACE)
-            fallback.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
-            tk.Label(fallback, text="🗺️", font=("Segoe UI Emoji", 48), bg=SURFACE, fg="#555").pack(expand=True)
-            tk.Label(fallback, text="Install tkintermapview to enable\nthe live map panel.",
-                     font=("Segoe UI", 11), fg="#888", bg=SURFACE, justify=tk.CENTER).pack()
-            self.map_widget = None
+            try:
+                widget = ManagedMapView(self._map_host, corner_radius=0)
+                self.map_widget = widget
+                widget.set_tile_server("https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+                widget.tile_image_cache.update(cached_tiles)
+                widget.pack(fill=tk.BOTH, expand=True)
+                widget.set_position(*position)
+                widget.set_zoom(zoom)
+                widget.add_right_click_menu_command("Add forecast position here", self._on_map_right_click, pass_coords=True)
+                self._refresh_osm_status("loading")
+                self._sync_map()
+                return
+            except Exception as exc:
+                from cycloneaid.diagnostics import error_message
+                failure = error_message("Live map initialization", exc)
+                if self.map_widget is not None:
+                    self.map_widget.destroy()
+                self.map_widget = None
+        title = "Live map is unavailable" if _HAS_MAP else "Live map is not installed"
+        ttk.Label(self._map_host, text=title, style="Title.TLabel", anchor=tk.CENTER).pack(pady=(12, 6))
+        detail = ("Retry or check the desktop dependencies."
+                  if _HAS_MAP else "Install the desktop extra, then relaunch.")
+        ttk.Label(self._map_host, text=detail+"\nChart maps work independently.",
+                  justify=tk.CENTER, style="Muted.TLabel", wraplength=300).pack(padx=12)
+        self._refresh_osm_status("unavailable" if _HAS_MAP else "not_installed", failure if _HAS_MAP else "")
 
-    # ── Bottom Clock Bar ──
     def _build_clock_bar(self):
-        bar = tk.Frame(self, bg="#1a1e25", bd=1, relief=tk.SUNKEN)
-        bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(2, 0))
-
-        left = tk.Frame(bar, bg="#1a1e25")
-        left.pack(side=tk.LEFT, padx=12, pady=6)
-
-        tk.Label(left, text="🕐", font=("Segoe UI Emoji", 16), bg="#1a1e25", fg=PRIMARY_COLOR).pack(side=tk.LEFT, padx=(0, 6))
-
-        zf = tk.Frame(left, bg="#1a1e25")
-        zf.pack(side=tk.LEFT)
-        self._zulu_lbl = tk.Label(zf, text="", font=("Consolas", 14, "bold"), fg=PRIMARY_COLOR, bg="#1a1e25")
-        self._zulu_lbl.pack(anchor=tk.W)
-        self._zulu_date = tk.Label(zf, text="", font=("Consolas", 9), fg="#888", bg="#1a1e25")
-        self._zulu_date.pack(anchor=tk.W)
-
-        tk.Frame(left, bg=LIGHT_BG, width=2).pack(side=tk.LEFT, fill=tk.Y, padx=12, pady=2)
-
-        lf = tk.Frame(left, bg="#1a1e25")
-        lf.pack(side=tk.LEFT)
-        self._local_lbl = tk.Label(lf, text="", font=("Consolas", 12), fg=ACCENT, bg="#1a1e25")
-        self._local_lbl.pack(anchor=tk.W)
-        self._local_tz = tk.Label(lf, text="", font=("Consolas", 9), fg="#888", bg="#1a1e25")
-        self._local_tz.pack(anchor=tk.W)
-
-        right = tk.Frame(bar, bg="#1a1e25")
-        right.pack(side=tk.RIGHT, padx=12, pady=6)
-        self._row_count_lbl = tk.Label(right, text="Rows: 0", font=("Segoe UI", 10, "bold"), fg=WHITE, bg="#1a1e25")
-        self._row_count_lbl.pack(side=tk.RIGHT, padx=(10, 0))
-        self._status_lbl = tk.Label(right, text="Ready", font=("Segoe UI", 10), fg="#aaa", bg="#1a1e25")
-        self._status_lbl.pack(side=tk.RIGHT)
-
+        bar = ttk.Frame(self, style="Workspace.TFrame", padding=(14, 5))
+        bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._status_lbl = ttk.Label(bar, text="Ready", style="Muted.TLabel", width=32, anchor=tk.W)
+        self._status_lbl.pack(side=tk.LEFT)
+        self._render_progress = ttk.Progressbar(bar, mode="indeterminate", length=70)
+        self._validation_var = tk.StringVar(self, "Add forecast rows to begin")
+        self._validation_label = ttk.Label(bar, textvariable=self._validation_var, style="Muted.TLabel",
+                                           cursor="hand2", takefocus=True)
+        self._validation_label.pack(side=tk.LEFT, padx=8)
+        self._validation_label.bind('<Button-1>', lambda event: self._show_validation_dialog(self._validate_data()))
+        self._validation_label.bind('<Return>', lambda event: self._show_validation_dialog(self._validate_data()))
+        self._clock_var = tk.StringVar(self, "")
+        ttk.Label(bar, textvariable=self._clock_var, style="Muted.TLabel").pack(side=tk.RIGHT)
+        ttk.Label(bar, text="Alpha · testing only", style="Muted.TLabel").pack(side=tk.RIGHT, padx=(0, 16))
         self._tick_clock()
 
     def _tick_clock(self):
         if not self.winfo_exists():
             return
-        now_utc = datetime.now(timezone.utc)
-        self._zulu_lbl.config(text=now_utc.strftime("%H:%M:%SZ"))
-        self._zulu_date.config(text=now_utc.strftime("%Y-%m-%d  UTC+0 (Zulu)"))
-
-        now_local = datetime.now()
-        tz_name = _time.strftime("%Z")
-        offset_sec = _time.timezone if _time.daylight == 0 else _time.altzone
-        offset_hrs = -offset_sec / 3600
-        sign = "+" if offset_hrs >= 0 else ""
-        self._local_lbl.config(text=now_local.strftime("%H:%M:%S"))
-        self._local_tz.config(text=f"{now_local.strftime('%Y-%m-%d')}  {tz_name} (UTC{sign}{offset_hrs:g})")
-
-        self._row_count_lbl.config(text=f"Rows: {len(self.tree.get_children())}")
+        self._clock_var.set(datetime.now(timezone.utc).strftime("%H:%MZ"))
+        widget = getattr(self, 'map_widget', None)
+        if widget is not None and hasattr(widget, 'tile_availability'):
+            state, detail = widget.tile_availability()
+            self._refresh_osm_status(state, detail)
         self._clock_after = self.after(1000, self._tick_clock)
 
-    # ─────────────────────────────────────────────────────────
-    # ROW MANAGEMENT
-    # ─────────────────────────────────────────────────────────
-    # ── Context menu ──
     def _show_row_context_menu(self, event):
         item = self.tree.identify_row(event.y)
         if item:
             self.tree.selection_set(item)
-        menu = tk.Menu(self, tearoff=0, bg=LIGHT_BG, fg=WHITE, font=("Segoe UI", 10),
-                       activebackground=PRIMARY_COLOR, activeforeground=DARK_BG)
-        menu.add_command(label="➕  Insert Above", command=self.insert_row_above)
-        menu.add_command(label="➕  Insert Below", command=self.insert_row_below)
-        menu.add_command(label="📋  Duplicate Row", command=self.duplicate_row)
-        menu.add_separator()
-        menu.add_command(label="🔼  Move Up", command=self.move_row_up)
-        menu.add_command(label="🔽  Move Down", command=self.move_row_down)
-        menu.add_separator()
-        menu.add_command(label="➖  Delete Row", command=self.remove_row)
+        menu = register_widget(tk.Menu(self, tearoff=0), "menu")
+        for label, action in [("Insert above", self.insert_row_above), ("Insert below", self.insert_row_below),
+                              ("Duplicate", self.duplicate_row), ("Move up", self.move_row_up),
+                              ("Move down", self.move_row_down), ("Delete", self.remove_row)]:
+            menu.add_command(label=label, command=action)
         menu.tk_popup(event.x_root, event.y_root)
 
     def _on_double_click(self, event):
-        if self.cell_editor:
-            self.cell_editor.destroy()
-            self.cell_editor = None
+        item, column = self.tree.identify_row(event.y), self.tree.identify_column(event.x)
+        if item and column:
+            self._edit_cell(item, int(column[1:])-1)
+        return 'break'
 
-        item = self.tree.identify_row(event.y)
-        col = self.tree.identify_column(event.x)
-        if not item or not col:
+    def _edit_selected(self, event=None):
+        selected = self.tree.selection()
+        rows = self.tree.get_children()
+        if selected or rows:
+            self._edit_cell(selected[0] if selected else rows[0], 0)
+        return 'break'
+
+    def _edit_cell(self, item, column):
+        if self.cell_editor and self.cell_editor.frame is not None:
+            self.cell_editor.commit()
+        self.tree.selection_set(item)
+        self.tree.focus(item)
+        self.tree.see(item)
+        # Bring an off-screen column into view before placing its editor.
+        columns = [name for name, _ in self.COLUMNS]
+        total = sum(self.tree.column(name, 'width') for name in columns)
+        offset = sum(self.tree.column(name, 'width') for name in columns[:column])
+        visible = self.tree.winfo_width()
+        current = self.tree.xview()[0]*total
+        if offset < current or offset+self.tree.column(columns[column], 'width') > current+visible-20:
+            self.tree.xview_moveto(max(0, min(1, offset/max(1, total))))
+        self.tree.update_idletasks()
+        name = columns[column]
+        self.cell_editor = CellEditor(self.table_frame, self.tree, item, f'#{column+1}', column,
+                                      name, self.tree.set(item, name), self._on_cell_save)
+
+    def _edit_adjacent(self, item, column, direction):
+        rows = self.tree.get_children()
+        if item not in rows:
             return
-        col_idx = int(col.replace('#', '')) - 1
-        col_name = self.COLUMNS[col_idx][0]
-        old_value = self.tree.set(item, col_name)
-
-        self.cell_editor = CellEditor(
-            self.table_frame, self.tree, item, col, col_idx, col_name, old_value, self._on_cell_save
-        )
-
+        index = rows.index(item)*len(self.COLUMNS)+column+direction
+        if 0 <= index < len(rows)*len(self.COLUMNS):
+            self._edit_cell(rows[index//len(self.COLUMNS)], index % len(self.COLUMNS))
+        else:
+            self.tree.focus_set()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 # APPLICATION ROOT
 # ═════════════════════════════════════════════════════════════════════════════
 
-def apply_dark_theme(window):
+def apply_dark_theme(window, dark=True):
     """Enable immersive dark mode for Windows 10/11 titlebar."""
     if sys.platform.startswith("win"):
         try:
@@ -962,7 +658,7 @@ def apply_dark_theme(window):
             if not hwnd:
                 hwnd = window.winfo_id()
             
-            rendering = ctypes.c_int(1)
+            rendering = ctypes.c_int(int(dark))
             # DWMWA_USE_IMMERSIVE_DARK_MODE = 20 (Windows 11)
             res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
                 hwnd, 20, ctypes.byref(rendering), ctypes.sizeof(rendering)
@@ -984,15 +680,14 @@ class StormTrackerApp(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        apply_dark_theme(self)
+        set_app_theme(load_theme_preference(), self, persist=False)
         self.title(f"{APP_NAME} — {VERSION}")
-        self.geometry("1300x750")
+        self.geometry("1600x900")
         self.minsize(1000, 650)
-        self.configure(bg=DARK_BG)
         self.current_frame = None
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.after(100, self._maximize)
-        self.show_home()
+        self.show_data_entry()
 
     def _close(self):
         if isinstance(self.current_frame, DataEntryScreen) and not self.current_frame._confirm_leave():
@@ -1004,17 +699,42 @@ class StormTrackerApp(tk.Tk):
     def _maximize(self):
         try:
             self.state('zoomed')
-        except Exception:
-            self.attributes('-zoomed', True)
+        except tk.TclError:
+            try:
+                self.attributes('-zoomed', True)
+            except tk.TclError:
+                pass
 
     def show_home(self):
-        if self.current_frame:
-            self.current_frame.destroy()
-        self.current_frame = HomeScreen(self, self.show_data_entry)
-        self.current_frame.pack(fill=tk.BOTH, expand=True)
+        # Compatibility entry point; welcome content no longer replaces a forecast.
+        return self.show_about()
+
+    def show_about(self):
+        window = tk.Toplevel(self)
+        window.title("About CycloneAid")
+        window.geometry("650x470")
+        window.transient(self)
+        body = ttk.Frame(window, padding=20)
+        body.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(body, text=f"CycloneAid {VERSION}", style="Title.TLabel").pack(anchor=tk.W)
+        ttk.Label(body, text=f"Created by {CREATOR} · Experimental forecast graphics · Not for operational use", wraplength=600,
+                  style="Muted.TLabel").pack(anchor=tk.W, pady=(8, 16))
+        notes = register_widget(tk.Text(body, wrap=tk.WORD, height=12, relief=tk.FLAT, padx=8, pady=8), "entry")
+        notes.pack(fill=tk.BOTH, expand=True)
+        for release in CHANGELOG:
+            notes.insert(tk.END, f"{release['version']} — {release['date']}\n")
+            for line in release['entries']:
+                notes.insert(tk.END, f"• {line}\n")
+            notes.insert(tk.END, '\n')
+        notes.configure(state=tk.DISABLED)
+        ttk.Button(body, text="Close", command=window.destroy).pack(anchor=tk.E, pady=(12, 0))
+        style_widget_tree(window)
+        return window
 
     def show_data_entry(self):
         if self.current_frame:
+            if not self.current_frame._confirm_leave():
+                return
             self.current_frame.destroy()
-        self.current_frame = DataEntryScreen(self, self.show_home)
+        self.current_frame = DataEntryScreen(self, self.show_about)
         self.current_frame.pack(fill=tk.BOTH, expand=True)

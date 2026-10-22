@@ -29,15 +29,16 @@ class MapReadinessMixin:
         self._osm_map_state = "unknown"
         self._osm_map_detail = ""
 
-    def _build_map_readiness(self, parent):
+    def _build_map_readiness(self, parent, *, osm_parent=None):
         frame = ttk.Frame(parent, padding=(8, 5))
         frame.columnconfigure(0, weight=1)
         self._map_readiness_frame = frame
-        self._map_readiness_label = ttk.Label(frame, anchor="w")
+        self._map_readiness_label = ttk.Label(frame, anchor="w", style="MapStatus.TLabel")
         self._map_readiness_label.grid(row=0, column=0, sticky="ew")
         self._map_readiness_detail_label = ttk.Label(frame, anchor="w", wraplength=420)
-        self._map_readiness_detail_label.grid(row=1, column=0, sticky="ew", pady=(2, 3))
+        self._map_readiness_detail_label.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 3))
         actions = ttk.Frame(frame)
+        self._map_readiness_actions = actions
         actions.grid(row=2, column=0, sticky="w")
         self._enable_maps_button = ttk.Button(actions, text="Enable maps", command=self.enable_maps)
         self._enable_maps_button.grid(row=0, column=0, padx=(0, 6))
@@ -45,18 +46,21 @@ class MapReadinessMixin:
             actions, text="Continue without basemap", command=self.continue_without_basemap)
         self._without_basemap_button.grid(row=0, column=1)
         self._map_preparation_progress = ttk.Progressbar(frame, mode="indeterminate")
-        self._map_preparation_progress.grid(row=3, column=0, sticky="ew", pady=3)
-        self._osm_status_label = ttk.Label(frame, anchor="w", wraplength=420)
-        self._osm_status_label.grid(row=4, column=0, sticky="ew", pady=(3, 0))
-        self._osm_retry_button = ttk.Button(frame, text="Retry live map", command=self.retry_osm_map)
-        self._osm_retry_button.grid(row=5, column=0, sticky="w", pady=(3, 0))
+        self._map_preparation_progress.grid(row=3, column=0, columnspan=2, sticky="ew", pady=3)
+        osm_host = frame if osm_parent is None else osm_parent
+        osm_host.columnconfigure(0, weight=1)
+        self._osm_status_label = ttk.Label(osm_host, anchor="w", wraplength=420, style="Muted.TLabel")
+        self._osm_status_label.grid(row=4 if osm_parent is None else 0, column=0, sticky="ew", pady=(3, 0))
+        self._osm_retry_button = ttk.Button(osm_host, text="Retry live map", command=self.retry_osm_map)
+        self._osm_retry_button.grid(row=5 if osm_parent is None else 1, column=0, sticky="w", pady=(3, 0))
 
         def wrap(event):
             width = max(180, event.width - 20)
             self._map_readiness_detail_label.configure(wraplength=width)
-            self._osm_status_label.configure(wraplength=width)
 
         frame.bind("<Configure>", wrap, add="+")
+        osm_host.bind("<Configure>", lambda event: self._osm_status_label.configure(
+            wraplength=max(180, event.width-20)), add="+")
         self._refresh_map_readiness()
         self._refresh_osm_status()
         return frame
@@ -82,8 +86,12 @@ class MapReadinessMixin:
         self._chart_map_status, self._chart_map_detail = status, detail
         if not hasattr(self, "_map_readiness_label"):
             return
-        self._map_readiness_label.configure(text=status)
-        self._map_readiness_detail_label.configure(text=detail)
+        self._map_readiness_label.configure(text=status, style="MapWarning.TLabel" if degraded or missing else "MapStatus.TLabel")
+        compact_detail = ("No basemap, city analysis, or automatic coastline events." if degraded else
+                          "Prepare once for offline chart maps." if missing else "Cached for offline charts.")
+        self._map_readiness_detail_label.configure(text=detail if preparing or self._map_asset_error else compact_detail)
+        self._map_readiness_actions.grid_configure(row=0 if degraded else 2,
+                                                  column=1 if degraded else 0, sticky="e" if degraded else "w")
         show_enable = degraded or bool(missing)
         if show_enable:
             self._enable_maps_button.grid()
@@ -107,7 +115,7 @@ class MapReadinessMixin:
         """Enable a warm cache immediately or prepare it for this project only."""
         if not geography_readiness():
             self._map_asset_error = ""
-            self._commit(settings=replace(self.controller.session.settings, geography_mode="full"))
+            self._commit(settings=replace(self.controller.session.settings, geography_mode="full"), infer_issue_time=False)
             self._refresh_map_readiness()
             self._set_status("Full maps enabled; refresh a chart to include the basemap")
             return
@@ -144,7 +152,7 @@ class MapReadinessMixin:
             return
         self._map_asset_enable_requested = False
         self._map_asset_error = ""
-        self._commit(settings=replace(self.controller.session.settings, geography_mode="degraded"))
+        self._commit(settings=replace(self.controller.session.settings, geography_mode="degraded"), infer_issue_time=False)
         self._refresh_map_readiness()
         self._set_status("Without basemap; city analysis and automatic coastline events are omitted")
 
@@ -167,7 +175,7 @@ class MapReadinessMixin:
         if error:
             self._set_status(f"Map setup failed: {error}. Retry setup or continue without basemap.")
         elif enable_requested and requested_generation == getattr(self, "_project_generation", 0):
-            self._commit(settings=replace(self.controller.session.settings, geography_mode="full"))
+            self._commit(settings=replace(self.controller.session.settings, geography_mode="full"), infer_issue_time=False)
             self._set_status("Full maps ready; refresh a chart to include the basemap")
         else:
             self._set_status("Map assets cached; the current project's geography setting was kept")
@@ -183,6 +191,7 @@ class MapReadinessMixin:
             "loading": "OSM live map: loading tiles…",
             "ready": "OSM live map: tiles are available for the current view.",
             "unavailable": "OSM live map unavailable. Check connectivity, then retry.",
+            "not_installed": "OSM live map is not installed. Install the desktop extra, then relaunch.",
         }
         text = labels.get(self._osm_map_state, labels["unknown"])
         if self._osm_map_detail:

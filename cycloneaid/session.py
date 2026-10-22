@@ -110,6 +110,13 @@ class SessionController:
     def mark_saved(self):
         self.saved_state = self._content(self.session)
 
+    def reset(self, session):
+        """Open a project with fresh history and a new renderer revision."""
+        self._undo.clear()
+        self._redo.clear()
+        self._install(session)
+        self.mark_saved()
+
     def commit(self, *, rows=None, settings=None, infer_issue_time=True):
         rows = tuple(rows) if rows is not None else self.session.rows
         settings = settings or self.session.settings
