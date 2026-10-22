@@ -110,10 +110,10 @@ class SessionController:
     def mark_saved(self):
         self.saved_state = self._content(self.session)
 
-    def commit(self, *, rows=None, settings=None):
+    def commit(self, *, rows=None, settings=None, infer_issue_time=True):
         rows = tuple(rows) if rows is not None else self.session.rows
         settings = settings or self.session.settings
-        if not settings.issue_time:
+        if infer_issue_time and not settings.issue_time:
             for row in rows:
                 try:
                     timestamp = utc_timestamp(row.values[0])

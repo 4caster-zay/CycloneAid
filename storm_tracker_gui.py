@@ -178,6 +178,15 @@ INTENSITY_COLORS = {
 CHANGELOG = [
     {
         "version": VERSION,
+        "date": "2026-10-22",
+        "entries": [
+            "Generate UTC forecast timestamps with a range preview and one-step undo.",
+            "Keep draft coordinates and winds blank; distinguish generated times from interpolated values.",
+            "Stabilize preview cleanup, retain diagnostics, and organize alpha testing and repository maintenance."
+        ],
+    },
+    {
+        "version": "0.10.0a1 (Alpha 1)",
         "date": "2026-10-21",
         "entries": [
             "Shared validated sessions with atomic project files, recovery, and undo/redo.",
@@ -690,8 +699,7 @@ class DataEntryScreen(SessionScreenMixin, tk.Frame):
         # Bottom clock
         self._build_clock_bar()
 
-        # Initial row
-        self.add_row()
+        self._update_action_buttons()
 
     # ── Top bar ──
     def _build_topbar(self):
@@ -754,7 +762,8 @@ class DataEntryScreen(SessionScreenMixin, tk.Frame):
     # ── Row management toolbar ──
     def _build_row_toolbar(self, parent):
         rows = tk.Frame(parent, bg=DARK_BG)
-        for label, action in [("➕ Add", self.add_row), ("⬆ Above", self.insert_row_above),
+        for label, action in [("➕ Add", self.add_row), ("Generate rows…", self.generate_rows),
+                              ("⬆ Above", self.insert_row_above),
                               ("⬇ Below", self.insert_row_below), ("Dup", self.duplicate_row),
                               ("Delete", self.remove_row), ("🔼", self.move_row_up),
                               ("🔽", self.move_row_down), ("Clear", self.clear_table)]:

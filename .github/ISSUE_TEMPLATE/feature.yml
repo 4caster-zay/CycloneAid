@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a focused improvement to a tester or maintainer workflow.
+title: "[Feature]: "
+labels: [feature, "priority:normal"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and audience
+      description: Who needs this improvement, and what is difficult in the current workflow?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Intended behavior
+      description: Describe the desired result with a concrete example. Include alternatives or limits that matter.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List the observable outcomes that would make this feature complete.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and related work
+      description: Link issues or roadmap milestones this depends on, or write "None known."
+    validations:
+      required: true

@@ -1,6 +1,6 @@
 # CycloneAid 🌀
 
-**Version 0.10.0a1 — experimental alpha for client testing.**
+**Version 0.10.0a2 — experimental alpha for client testing.**
 
 CycloneAid prepares graphics from a forecast supplied by an operator. It provides a Tkinter data table and interactive OSM map, a regional forecast-track graphic, an intensity timeline, and exact-window wind-change analysis. It does not forecast winds, retrieve live advisories, assimilate observations, or calculate pressure changes.
 
@@ -60,6 +60,7 @@ uv export --locked --extra desktop --no-dev --no-emit-project --no-header --outp
 
 ## Desktop workflow and session safety
 
+- Use **Generate rows…** beside the row controls to create timestamps from an explicit UTC start, interval (default 6 hours), and horizon (default 120 hours). Preview the inclusive range before appending. Coordinates and winds stay blank for deliberate entry, and the addition is one undoable action. Existing timestamps must be valid and strictly increasing; generated times must follow them. See [forecast row generation](docs/row-generation.md).
 - Enter or edit forecast data once, then preview or save any of the three chart products. Save can render without a preview. Preview construction never writes image files.
 - Use **Project → Session settings** for independent issue time, source agency, wind averaging period, and full/degraded geography. Unknown conventions stay unknown; the application does not convert wind averaging periods.
 - Use **Project → Save/Open** for versioned `.cycloneaid.json` project files. They preserve all rows, settings, provenance, and intensity override reasons, including incomplete drafts. Saving is atomic.
@@ -114,6 +115,8 @@ uv run python tools/smoke_geography.py --cache /tmp/cycloneaid-map-cache --outpu
 
 CI checks Python 3.12 on Windows, Linux, and macOS, with and without desktop extras. GUI integration tests also run under Xvfb on Linux. Unit tests use synthetic geography and never require network downloads. `tools/benchmark.py` records repeated median timings; performance results are environment-specific diagnostics.
 
-The canonical version is in `cycloneaid/metadata.py`; packaging, the GUI, and chart metadata consume it. Use SemVer change meanings with Python prerelease notation: compatible fixes increment PATCH, substantial changes/features during 0.x increment MINOR, and prereleases use `aN`, `bN`, then `rcN`. Tags match versions, e.g. `v0.10.0a1`. Reserve 1.0 for a dependable documented workflow and compatibility contract; scientific calibration is separately stated. See [CHANGELOG.md](CHANGELOG.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+The canonical version is in `cycloneaid/metadata.py`; packaging, the GUI, and chart metadata consume it. Use SemVer change meanings with Python prerelease notation: compatible fixes increment PATCH, substantial changes/features during 0.x increment MINOR, and prereleases use `aN`, `bN`, then `rcN`. Tags match versions, e.g. `v0.10.0a2`. Reserve 1.0 for a dependable documented workflow and compatibility contract; scientific calibration is separately stated. See [CHANGELOG.md](CHANGELOG.md) and [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
+For planned work and contributing, start with the [roadmap](ROADMAP.md) and [contribution guide](CONTRIBUTING.md). [Historical review and reconciliation](docs/history/PROJECT_REVIEW.md) and [diagnostic benchmarks](docs/benchmarks/BENCHMARK_RESULTS.md) retain the earlier evidence and its limits.
 
 MIT licensed. Created by Forecaster Zayed.
