@@ -25,6 +25,10 @@ Create a short-lived `codex/` branch from the latest `main`, such as `codex/fore
 
 ## Check your work
 
+During active feature development, keep required CI and focused verification for each change. Protect input validation, scientific calculations, saved projects and recovery, undo/redo, project ownership of background results, and export correctness with relevant regression checks. Smoke-check the workflow changed by the PR. Documentation-only changes need documentation and consistency checks rather than a repeated manual application qualification.
+
+Defer broad native Windows/macOS checks, tester-network coverage, exhaustive theme/window-size inspection, and repeated full manual release checklists until a release candidate is selected for broader testing. Keep those follow-ups open; they do not block unrelated feature work. Existing automated cross-platform CI remains required. Deferral does not waive checks needed to verify the behavior changed by a PR.
+
 After syncing the locked environment, run:
 
 ```bash
@@ -39,7 +43,7 @@ For Tkinter or session changes, also run the Linux GUI tests with a display:
 CYCLONEAID_GUI_TESTS=1 xvfb-run -a uv run --no-sync python -m unittest discover -s tests -v
 ```
 
-Normal tests use synthetic geography and do not download maps. For geography changes, run the cached-map and download/offline checks in the README and record the results. Native Windows and macOS behavior needs separate desktop checks.
+Normal tests use synthetic geography and do not download maps. For geography changes, run the affected cached-map and download/offline checks in the README and record the results. Broad native Windows/macOS and tester-network qualification remains deferred as described above.
 
 Run `uv build` for packaging or release changes. Check that the wheel and source archive contain the needed files and that the installed application opens the sample. If you cannot run a relevant check, say so in the PR and link a follow-up issue. The [release record](RELEASE_CHECKLIST.md) lists the remaining platform and network checks.
 

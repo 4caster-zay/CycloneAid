@@ -6,6 +6,12 @@ CycloneAid is a desktop tool for plotting tropical cyclone forecasts that you su
 
 **For testing and development only, not operational use.** CycloneAid does not generate forecasts or retrieve live advisories. Check its inputs and outputs against the appropriate official agency. The uncertainty envelope is heuristic and has no calibrated probability; a software release does not establish forecast skill.
 
+## Development direction
+
+CycloneAid is moving forward with continued feature development, building on the new forecast workspace, embedded chart previews, and forecast row generation. Spreadsheet paste and exporting all charts together are candidates for upcoming work; release scope and dates are still to be decided.
+
+We are keeping required automated CI and focused checks for data integrity, scientific calculations, exports, and each changed workflow. Broad native-platform, tester-network, and manual qualification will resume when a release candidate is selected for broader testing. Those checks remain tracked and unverified while feature development continues. See the [roadmap](ROADMAP.md) and [development checks](CONTRIBUTING.md#check-your-work) for the current approach.
+
 ## Get started
 
 Python **3.12** with Tk support is required. From the project folder:

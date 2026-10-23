@@ -1,8 +1,8 @@
 # CycloneAid roadmap
 
-The current release is [0.11.0a1](https://github.com/4caster-zay/CycloneAid/releases/tag/v0.11.0a1). The next priority is to verify the workspace on testers' desktops before adding more forecast-entry features. Issues hold the tasks and acceptance criteria; this page explains their order.
+The current release is [0.11.0a1](https://github.com/4caster-zay/CycloneAid/releases/tag/v0.11.0a1). Feature development continues with required CI and focused checks for each change. Broad platform, network, and manual qualification are deferred until a release candidate. Issues hold the tasks and acceptance criteria; this page explains their order.
 
-## Next: complete desktop and network checks
+## Deferred: desktop and network qualification
 
 The [alpha stabilization milestone](https://github.com/4caster-zay/CycloneAid/milestone/1) remains open for:
 
@@ -10,7 +10,7 @@ The [alpha stabilization milestone](https://github.com/4caster-zay/CycloneAid/mi
 - [macOS desktop checks #3](https://github.com/4caster-zay/CycloneAid/issues/3).
 - [OSM behavior on tester networks #4](https://github.com/4caster-zay/CycloneAid/issues/4).
 
-These checks cover editing, themes, map setup, preview and export, recovery, and online or offline tile loading. Each needs a recorded result from the relevant desktop or network. Headless CI and cached chart maps do not replace that evidence. Reproduce any reported failure and open a focused bug before treating it as a release blocker.
+These checks cover editing, themes, map setup, preview and export, recovery, and online or offline tile loading. They remain open and do not block unrelated feature development. Revisit them when selecting a release candidate for broader testing. Each needs a recorded result from the relevant desktop or network; headless CI and cached chart maps do not replace that evidence. Reproduce any reported failure and open a focused bug before treating it as a release blocker.
 
 ## Delivered
 
@@ -27,6 +27,6 @@ Review tester reports weekly during active testing, and dependencies and release
 
 ## Possible later work
 
-Spreadsheet paste and exporting all charts together are candidates after feedback on row generation and the workspace. They are not scheduled for a release.
+Spreadsheet paste and exporting all charts together are candidates for further development. Their priority can be refined as feedback arrives; they are not scheduled for a release.
 
-Keep Python 3.12, Tkinter, project schema 1, current regional coverage, and the existing scientific calculations. Broader package changes, expanded geography, new scientific products, and live advisory retrieval need separate proposals and supporting evidence. Work advances when the checks are complete, rather than on fixed calendar deadlines.
+Keep Python 3.12, Tkinter, project schema 1, current regional coverage, and the existing scientific calculations. Broader package changes, expanded geography, new scientific products, and live advisory retrieval need separate proposals and supporting evidence. Each change must pass the applicable development checks in [CONTRIBUTING.md](CONTRIBUTING.md#check-your-work); deferred qualification is revisited at release-candidate selection.
