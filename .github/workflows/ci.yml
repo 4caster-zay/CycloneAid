@@ -12,13 +12,13 @@ jobs:
       MPLBACKEND: Agg
       CYCLONEAID_GUI_TESTS: '0'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y python3-tk
         if: runner.os == 'Linux'
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.4'
       - run: uv sync --locked --python python
@@ -37,11 +37,11 @@ jobs:
       MPLBACKEND: Agg
       CYCLONEAID_GUI_TESTS: '1'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.4'
       - run: sudo apt-get update && sudo apt-get install -y xvfb python3-tk
